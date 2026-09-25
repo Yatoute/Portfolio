@@ -1,0 +1,93 @@
+> **Testez-le en direct** — un document est préchargé sur la [démo ChatPDF](/demos/chatpdf), posez-lui une question directement, ou uploadez votre propre PDF.
+
+## Pourquoi ce projet
+
+Un classement volontairement assumé : c'est le projet le plus
+"orchestration" de ce portfolio — un agent qui appelle des modèles via API
+plutôt que d'en fine-tuner un. Je le présente tel quel, sans le déguiser en
+travail de modèle, parce que le contraste avec les autres projets est
+justement ce qui montre que je sais faire les deux, et que je sais lequel
+choisir selon le problème.
+
+## Ce que j'ai construit
+
+Un chatbot RAG sur documents PDF, mais pas un simple top-k de recherche
+sémantique. L'agent, construit avec **LangGraph**, décide lui-même comment
+rassembler ses preuves avant de répondre, via un jeu d'outils :
+
+- **Recherche sémantique** — similarité ou MMR (diversité) sur les chunks
+  indexés dans FAISS.
+- **Navigation dans le graphe de chunks** — récupérer le chunk suivant, le
+  précédent, ou une fenêtre autour d'un chunk, pour reconstituer le contexte
+  quand une idée s'étale sur plusieurs morceaux de texte.
+- **Lecture d'une page complète** — accès direct au texte intégral d'une
+  page, au-delà des chunks indexés.
+- **Liste des documents disponibles** — conscience multi-documents dans une
+  même session.
+
+Concrètement, pour une question qui déborde d'un seul chunk indexé,
+l'agent enchaîne plusieurs outils avant de répondre — pas un simple
+top-k :
+
+```text
+User: "Quelles sont les limites mentionnées par les auteurs ?"
+
+🔎 semantic_search("limites, limitations, contraintes")
+   → 2 chunks pertinents trouvés (page 14, page 15)
+🔎 get_next_chunk(page 15)
+   → la liste des limites continue sur le chunk suivant
+💬 Réponse générée, citant les pages 14-15
+```
+
+### Le graphe, précisément
+
+Le graphe compte quatre étapes : un appel au modèle (avec ou sans outils),
+une étape d'exécution d'outil, une étape de résumé, et une étape de
+nettoyage d'historique.
+
+- **Limite de rounds, pas de boucle infinie.** Un compteur de tours de
+  récupération est incrémenté à chaque appel au modèle. Une fois le nombre
+  maximal de rounds atteint (2), l'agent **change de prompt** : il n'a plus
+  l'option d'appeler un outil, seulement de répondre. Pas de garde-fou
+  externe qui coupe la boucle après coup — la contrainte est intégrée dans
+  le prompt lui-même une fois le budget épuisé.
+- **Le nettoyage précède le résumé.** Avant de décider s'il faut résumer,
+  l'historique est débarrassé de tous les appels d'outils intermédiaires et
+  de leurs résultats — ce qui reste, c'est la substance de la conversation
+  (questions, réponses), pas le bruit des allers-retours d'outils. Le résumé
+  (quand il se déclenche) porte donc sur un historique déjà propre.
+- **Le résumé se déclenche sur les tokens, pas sur le nombre de messages** —
+  seuil de 10 000 tokens **et** au moins 10 messages récents, lu directement
+  depuis les métadonnées d'usage renvoyées par le modèle. Les 4 derniers
+  messages sont toujours gardés intacts ; tout ce qui précède est condensé
+  dans un résumé glissant.
+- **Feedback utilisateur en temps réel** : chaque appel d'outil est associé à
+  un message convivial affiché pendant son exécution (ex. *"🔎 Searching the
+  document for [query] to find relevant evidence..."*) plutôt qu'un simple
+  spinner générique.
+
+Ingestion avec OCR intégré (RapidOCR) pour les documents scannés, et
+providers de modèles interchangeables — OpenAI ou Ollama en local — via une
+factory de modèles.
+
+## Architecture de déploiement
+
+FastAPI (API) + Streamlit (interface) + nginx (reverse proxy), les trois
+processus orchestrés dans une seule image Docker, avec un volume persistant
+pour les index FAISS des documents uploadés.
+
+## De "ça marche en local" à une démo publique
+
+Rendre ce projet testable publiquement a demandé plus que le déployer : rate
+limiting par IP sur l'upload et le chat pour éviter les abus, CORS restreint
+au domaine réel du portfolio, préchargement d'un document par défaut au
+démarrage pour que la démo soit utilisable sans upload, et un vrai correctif
+de dépendances — la version de LangGraph figée dans le projet original
+s'est révélée incompatible avec l'écosystème LangChain actuel, corrigée en
+remontant vers une paire de versions mutuellement compatible et re-testée
+avec une vraie conversation de bout en bout avant mise en production.
+
+## Stack technique
+
+LangChain / LangGraph · FastAPI · Streamlit · FAISS · PyMuPDF · RapidOCR ·
+OpenAI / Ollama · nginx

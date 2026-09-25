@@ -1,0 +1,153 @@
+> **Testez le moteur en direct** — une démo texte→traduction (même moteur Argos/CTranslate2, tournant en process) est disponible sur la [démo video mining](/demos/video-mining), qui héberge aussi la traduction.
+
+## Le problème
+
+Dans une plateforme de social intelligence qui traite des dizaines de milliers de
+documents par jour, une des étapes du pipeline consistait à traduire le texte
+collecté vers une langue commune avant analyse. Cette étape appelait un service
+externe (une instance LibreTranslate) via une requête HTTP par document.
+
+À l'échelle de production, ce design avait deux défauts : chaque appel payait le
+coût d'une requête réseau + d'un cold start potentiel, et le service ne tirait
+aucun parti du fait que des dizaines de documents similaires arrivaient dans la
+même fenêtre de temps.
+
+## Le choix qui a précédé le code : ré-architecturer plutôt que changer de modèle
+
+Avant d'optimiser quoi que ce soit, la première piste explorée n'était pas
+l'architecture — c'était de remplacer le moteur de traduction lui-même.
+**MADLAD-400** et plusieurs autres modèles de traduction multilingues open
+source récents ont été testés pour voir s'ils pouvaient remplacer la solution
+existante avec une meilleure qualité.
+
+Constat systématique : ces modèles généralistes **hallucinent sur les langues
+à faibles ressources**, et ignorent parfois complètement certaines expressions
+au profit de tournures plus fréquentes rencontrées à l'entraînement — un
+problème de fond, pas un détail de configuration.
+
+Plutôt que de chercher encore un autre modèle généraliste, j'ai pris la
+décision inverse : garder **exactement les mêmes modèles** que la solution en
+place (Argos Translate — les mêmes paires de modèles utilisées en interne par
+LibreTranslate), donc la même qualité de traduction garantie par construction,
+et concentrer tout l'effort d'ingénierie sur la façon de les **servir**. C'est
+ce choix — ne pas confondre un problème de qualité de modèle avec un problème
+de performance d'infrastructure — qui a ouvert la voie au reste.
+
+## Ce que j'ai construit
+
+J'ai remplacé l'appel externe par un moteur de traduction **en process**, basé
+sur les mêmes modèles (Argos Translate / OPUS-MT, licence CC-BY 4.0) mais servis
+directement via **CTranslate2** sur GPU, à l'intérieur de la Cloud Function
+elle-même. Trois décisions ont fait la différence :
+
+- **Cache LRU des modèles par paire de langues** — au lieu de charger les 22
+  langues à chaque cold start, seuls les modèles réellement demandés sont chargés,
+  avec éviction sous pression mémoire.
+- **Fusion dynamique de requêtes** — un composant de coordination de batch
+  développé from scratch regroupe les traductions individuelles qui arrivent
+  en concurrence dans une fenêtre courte, et les soumet à CTranslate2 comme un
+  seul batch GPU, plutôt qu'un appel par document.
+- **Tuning empirique de la taille de batch** — la taille de batch interne de
+  CTranslate2 a été testée à 256, 1024, 2048 puis 4096 sur un GPU L4, jusqu'à
+  observer un plateau de performance, découplée du paramètre de dispatch
+  applicatif pour éviter de mélanger deux échelles de décision différentes.
+
+Ces deux premiers changements d'architecture (cache à la demande + batching par
+langue), **avant même** le tuning de la taille de batch GPU, donnaient déjà
+×10 de vitesse et -40% de coût par rapport à la v1. Le résultat final couvre
+les **50 langues** que sait traduire Argos (contre 22 préchargées en dur
+auparavant), avec un lot de 500 documents envoyés par défaut à chaque instance
+— assez de matière pour que chaque passe d'inférence GPU en profite pleinement,
+sans appels superflus.
+
+## Avant / après, en pratique
+
+**v1 — un appel réseau par document**, chaque document attend son propre
+aller-retour HTTP vers le service externe, même si 50 autres documents
+similaires arrivent dans la même seconde :
+
+```python
+for document in documents:
+    response = requests.post(
+        "https://libretranslate.internal/translate",
+        json={"q": document.text, "source": "auto", "target": "en"},
+    )
+    document.translation = response.json()["translatedText"]
+```
+
+**v2 — les requêtes concurrentes sont fusionnées en un seul batch GPU**,
+le modèle n'est chargé qu'une fois par langue et reste en cache :
+
+```python
+# Chaque appel s'ajoute à une fenêtre de fusion courte ; le batch est
+# soumis à CTranslate2 dès que la fenêtre se ferme ou qu'il est plein.
+async def translate(text: str, target_lang: str) -> str:
+    model = model_cache.get_or_load(target_lang)   # cache LRU, pas de rechargement
+    result = await batch_coordinator.submit(text, model)  # fusion des requêtes concurrentes
+    return result
+```
+
+Même modèle, même qualité de sortie — seule la façon de le servir change.
+C'est ce changement, pas un nouveau modèle, qui produit le ×77.
+
+## Résultats mesurés
+
+Benchmarké sur un import de production réel (plus de 12 000 documents), en
+comparant le service externe (v1) au moteur en process (v2) :
+
+<div className="not-prose grid grid-cols-1 gap-3 sm:grid-cols-3 my-6">
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">-90%</div>
+    <div className="text-xs text-[var(--muted)]">de coût d'infrastructure GCP</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">×77</div>
+    <div className="text-xs text-[var(--muted)]">plus rapide par document</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">30.7ms</div>
+    <div className="text-xs text-[var(--muted)]">par document, contre 1855ms initialement</div>
+  </div>
+</div>
+
+Le temps moyen de traitement par document est passé de **1854.89ms** (v1,
+appel externe) à **177.57ms** après un premier passage d'optimisation, puis à
+**30.72ms** après le tuning du batching GPU — soit une réduction de coût
+mesurée de -88.5% puis -90.0%.
+
+## Défis d'ingénierie rencontrés
+
+Ce n'est pas resté un simple exercice de tuning de paramètres — plusieurs bugs
+de production réels ont dû être diagnostiqués et corrigés :
+
+- **Un bug de beam search dégénéré** : sur certains textes en majuscules mêlés
+  d'emojis, la recherche en faisceau du modèle de traduction convergeait vers
+  une hypothèse dégénérée (répétition ou sortie incohérente). Corrigé en
+  isolant le prétraitement du texte source avant l'appel au modèle.
+- **Un deadlock en production** : le mécanisme d'exclusion mutuelle protégeant
+  l'installation des modèles Argos pouvait bloquer simultanément plusieurs
+  requêtes concurrentes (jusqu'à 8 observées en production) dans certaines
+  séquences d'accès. Reproduit localement avec un script forçant
+  l'entrelacement des threads, puis corrigé.
+- **Une race condition dans le cache** : sous forte concurrence, deux requêtes
+  pouvaient déclencher le chargement du même modèle simultanément, corrompant
+  temporairement le cache. Corrigé avec un verrou par clé de langue plutôt
+  qu'un verrou global.
+- **Un miroir régional des modèles sur GCS** : plutôt que de dépendre du CDN
+  public d'Argos à chaque cold start, les modèles sont mise en cache dans un
+  bucket GCS dans la même région que la Cloud Function, réduisant la latence
+  et la dépendance à un service tiers.
+
+## Qualité et licence, pas seulement vitesse
+
+Même modèles des deux côtés → qualité de traduction vérifiée équivalente,
+document par document, sur un échantillon réel — pas juste supposée. Licence
+des modèles Argos vérifiée explicitement (CC-BY 4.0, attribution requise, non
+restrictive) : aucune nouvelle exposition légale, puisque la v1 utilisait déjà
+Argos Translate comme moteur interne — mêmes fichiers de modèle, même
+licence, déjà en production.
+
+## Stack technique
+
+CTranslate2 · Argos Translate (OPUS-MT / Helsinki-NLP) · PyTorch · fastText
+(détection de langue) · GCP Cloud Functions · Cloud Tasks · GPU L4

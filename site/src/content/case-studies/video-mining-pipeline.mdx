@@ -1,0 +1,115 @@
+> **Testez le pipeline en direct** — uploadez une courte vidéo (≤3min) sur la [démo video mining](/demos/video-mining) et voyez les scènes, keyframes et transcript générés en temps réel. Tourne sur CPU seul, avec les mêmes algorithmes que ceux décrits ci-dessous.
+
+## Le problème
+
+Une plateforme de social intelligence collecte des dizaines de milliers de
+vidéos par jour depuis les réseaux sociaux. Pour les rendre exploitables par
+les analystes (recherche, cartographie thématique, détection de contenu
+réutilisé), il faut en extraire une structure : où sont les coupures de
+plan, quelles images représentent le mieux chaque plan, et qu'est-ce qui y
+est dit. Le tout doit tenir dans un budget de traitement compatible avec un
+flux continu de vidéos, pas un batch nocturne.
+
+## Architecture
+
+Le pipeline est découpé en trois Cloud Functions GCP chaînées, chacune
+resumable et consciente de sa propre limite de temps d'exécution (elle se
+re-planifie elle-même si elle approche du timeout de Cloud Tasks plutôt que
+d'échouer) :
+
+```
+Vidéo source
+   │
+   ▼
+Détection de scènes (PySceneDetect + FlashFilter)
+   │
+   ├──▶ Sélection de keyframes (OpenCLIP + Farthest Point Sampling)
+   │
+   └──▶ Transcription (WhisperX) — segmentée par scène
+```
+
+**Détection de scènes** — un détecteur de contenu avec filtre anti-flash
+(PySceneDetect), qui traite les vidéos par lots resumables plutôt que d'un
+bloc, pour tenir dans les limites de temps d'une Cloud Function.
+
+**Sélection de keyframes** — en deux temps, à l'échelle de la scène puis de
+la vidéo entière.
+
+D'abord, par scène : un flux de frames est comparé deux à deux (distance de
+Bhattacharyya sur histogrammes HSV) pour repérer les changements visuels
+réels. Les candidats sont gardés dans un ensemble **borné en mémoire** (10
+par défaut) — quand une nouvelle frame franchit le seuil de distinction et
+que l'ensemble est plein, le candidat le plus faible (distance minimale) est
+évincé, et le seuil remonte dynamiquement au niveau du candidat le plus
+faible restant. Effet pratique : sur une scène très dense visuellement, le
+seuil s'auto-ajuste et filtre progressivement les transitions marginales,
+sans jamais dépasser la limite mémoire — pas besoin de connaître à l'avance
+la densité de la scène pour dimensionner le buffer.
+
+Ensuite, à l'échelle de la vidéo entière : tous les candidats de toutes les
+scènes sont mis en commun, puis un **Farthest Point Sampling incrémental**
+choisit les keyframes finales — à chaque étape, la frame dont la distance
+minimale à l'ensemble déjà sélectionné est la plus grande. Une mise à jour
+incrémentale de ces distances minimales (au lieu de les recalculer à chaque
+tour) ramène la complexité à O(N×K) plutôt que O(N²×K). Résultat : les
+keyframes ne sur-représentent pas une scène répétée plusieurs fois dans la
+vidéo — la diversité est optimisée globalement, pas scène par scène.
+Embeddings calculés avec **OpenCLIP (ViT-B-32)**.
+
+**Transcription** — **WhisperX** (alignement mot-à-mot compris) transcrit
+la piste audio, puis le texte est re-segmenté pour respecter les limites de
+scène détectées en amont, avec une heuristique de détection de pause pour
+décider à quelle scène rattacher un mot proche d'une frontière.
+
+Sortie type pour une scène, une fois les trois étapes passées — c'est
+exactement cette structure que la [démo en direct](/demos/video-mining)
+affiche à l'écran :
+
+```json
+{
+  "index": 2,
+  "start_ms": 14200,
+  "end_ms": 21800,
+  "transcript": "so the second experiment removes the memory buffer entirely",
+  "keyframes": [
+    { "rank": 0, "frame_index": 412, "filename": "scene2_kf0.jpg" },
+    { "rank": 1, "frame_index": 480, "filename": "scene2_kf1.jpg" }
+  ]
+}
+```
+
+## Optimisations qui ont compté
+
+- **Déduplication par fichier source** — plusieurs publications peuvent
+  partager exactement la même vidéo (reprises, citations). Le pipeline
+  regroupe les documents par fichier physique avant de lancer WhisperX, pour
+  ne transcrire qu'une seule fois une vidéo vue plusieurs fois — mesuré à
+  **2.3× moins d'inférences GPU** sur un import réel.
+- **Chargement paresseux des modèles** — un incident de production a montré
+  que 33.5 des 35.7 secondes d'un appel étaient perdues à charger WhisperX
+  pour un appel qui, au final, ne faisait que du dispatch. Le modèle n'est
+  désormais chargé qu'au moment réel de l'utiliser.
+- **Cache LRU des modèles d'alignement** — comme pour le moteur de
+  traduction, les modèles d'alignement WhisperX par langue sont mis en
+  cache avec éviction sous pression mémoire plutôt que rechargés à chaque
+  appel.
+
+## Débit
+
+Sur les volumes traités en production : environ **1000 vidéos/heure** pour
+la détection de scènes, et environ **500 vidéos/heure** pour la
+transcription (étape plus coûteuse en calcul).
+
+## Une brique explorée puis dépréciée
+
+Une quatrième Cloud Function comparait les embeddings de
+scènes entre vidéos pour détecter des séquences réutilisées d'une
+publication à l'autre (utile pour repérer de l'amplification coordonnée).
+Elle a depuis été remplacée par une fonction de coordination plus générique
+côté plateforme — gardée ici comme référence de l'algorithme (similarité
+cosinus par blocs, regroupement par union-find), pas comme code actif.
+
+## Stack technique
+
+PySceneDetect · OpenCLIP (ViT-B-32) · WhisperX · OpenCV · NumPy · GCP Cloud
+Functions · Cloud Tasks

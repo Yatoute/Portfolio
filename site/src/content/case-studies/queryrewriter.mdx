@@ -1,0 +1,73 @@
+## Pourquoi ce projet
+
+Dans un agent RAG conversationnel comme [ChatPDF](/projects/chatpdf), une
+question de suivi ("et sa scalabilité ?") n'a aucun sens pour un moteur de
+recherche sémantique si elle n'est pas d'abord reformulée en question
+autonome ("quelle est la scalabilité du modèle X décrit dans le
+document ?"). Ce projet construit ce module de réécriture — pas en
+prompt-engineering, mais en fine-tunant un modèle open-weight dédié.
+
+## Génération du dataset — un pipeline à part entière
+
+Aucun dataset public ne correspondait exactement au besoin, donc j'en ai
+généré un : à partir de résumés réels d'articles arXiv, un pipeline en
+plusieurs étapes produit des exemples d'entraînement.
+
+1. **Génération** — un LLM simule des conversations multi-tours réalistes
+   sur chaque article.
+2. **Extraction** — chaque tour utilisateur est converti en exemple
+   structuré (`historique, question, question_reformulée, faut_il_reformuler,
+   type_de_reformulation, difficulté`).
+3. **Validation** — un second passage LLM (LLM-as-judge) valide ou corrige
+   chaque exemple généré.
+4. **Filtrage et équilibrage** — déduplication, puis un plafond appliqué par
+   catégorie de reformulation pour empêcher qu'un type de question sur-
+   représenté dans les articles sources ne domine le dataset, et un ratio
+   cible maintenu volontairement entre les cas "à reformuler" et "déjà
+   autonome" — sans ce garde-fou, un modèle entraîné dessus apprend le
+   raccourci "toujours reformuler" plutôt qu'à vraiment juger si c'est
+   nécessaire.
+
+Exemple réel du dataset généré (format SFT, historique + reformulation) :
+
+```json
+{
+  "history": [
+    { "role": "user", "content": "Can you summarize the paper?" },
+    { "role": "assistant", "content": "The paper focuses on `GRRM: Group Relative Reward Modeling for Machine Translation`." }
+  ],
+  "user_query": "How does this method work?",
+  "rewritten_query": "How does `GRRM: Group Relative Reward Modeling for Machine Translation` work?",
+  "should_rewrite": true,
+  "rewrite_type": ["coreference_resolution"],
+  "difficulty": "easy"
+}
+```
+
+Résultat : **15 391 exemples** (13 852 train / 1 539 test).
+
+## Fine-tuning
+
+QLoRA (4-bit, rang 16, alpha 32) sur **Qwen 9B**, via **LLaMA-Factory**, sur
+un GPU A100 loué sur RunPod — batch 4 avec accumulation de gradient ×8,
+learning rate 2e-5, schedule cosinus, 2 epochs, bf16, checkpoints
+reprenables.
+
+## Évaluation
+
+Le harnais d'évaluation calcule l'exact match, le F1 au niveau token, et une
+similarité sémantique par embeddings (`all-MiniLM-L6-v2`) entre les
+reformulations générées et les références. Les résultats de cette
+évaluation sont en cours de re-génération et seront ajoutés à cette page
+une fois disponibles.
+
+## Utilisation
+
+Conçu comme un module autonome et réutilisable dès le départ : un nœud de
+graphe prêt à être branché dans n'importe quel pipeline agentique RAG ayant
+besoin de résoudre le contexte conversationnel avant la recherche
+sémantique — [ChatPDF](/projects/chatpdf) en premier candidat.
+
+## Stack technique
+
+LLaMA-Factory · PEFT / QLoRA · Qwen · sentence-transformers · RunPod (A100)

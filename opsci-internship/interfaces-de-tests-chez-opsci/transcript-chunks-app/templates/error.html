@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 100px auto; padding: 0 20px; text-align: center;">
+  <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+  <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #f07070;">Erreur</h2>
+  <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 28px; font-family: monospace; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: left; word-break: break-all;">
+    {{ message }}
+  </p>
+  <a href="/" class="btn">← Retour</a>
+</div>
+{% endblock %}

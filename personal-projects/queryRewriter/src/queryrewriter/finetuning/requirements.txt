@@ -1,0 +1,14 @@
+datasets>=2.20.0
+transformers>=4.51.0
+peft>=0.14.0
+accelerate>=0.34.0
+bitsandbytes>=0.45.0
+scikit-learn>=1.5.0
+sentence-transformers>=3.0.0
+pyyaml>=6.0.2
+orjson>=3.10.0
+bitsandbytes>=0.39.0
+
+
+
+

@@ -1,0 +1,26 @@
+# Web
+fastapi>=0.134.0
+uvicorn[standard]==0.41.0
+python-multipart==0.0.9
+jinja2>=3.1
+slowapi>=0.1.9
+
+# Vision / scene pipeline (same pinned versions as the production Cloud Functions)
+opencv-python-headless==4.13.0.92
+scenedetect==0.6.7.1
+open-clip-torch==3.3.0
+pillow>=10.0
+numpy>=1.26
+
+# Transcription
+whisperx==3.8.5
+
+# Translation
+argostranslate>=1.9
+fast-langdetect>=1.0
+
+# torch is pulled transitively by open-clip-torch/whisperx; install CPU wheel explicitly
+# in the Dockerfile via --index-url to avoid pulling CUDA wheels on a CPU-only machine.
+# Unpinned on purpose: whisperx==3.8.5 requires torch~=2.8.0, open-clip-torch just
+# wants >=2.0 — let pip resolve whichever version satisfies both rather than fighting it.
+torch

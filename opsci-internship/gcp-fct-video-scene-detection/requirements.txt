@@ -1,0 +1,5 @@
+psutil
+opencv-python==4.13.0.92
+scenedetect==0.6.7.1
+--extra-index-url https://europe-west1-python.pkg.dev/demo-project/opsci-python-repository/simple/
+gcpOpsci>=1.0.109

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Reprises{% if analyse_id %} — analyse {{ analyse_id }}{% endif %}{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Alertes ── */
+  .alert-error {
+    background: #2a1010; border: 1px solid #7a2020; border-radius: 7px;
+    padding: 12px 16px; margin-bottom: 20px; font-size: 12px; color: #e07070;
+  }
+
+  /* ── Stats ── */
+  .stats-bar {
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    padding: 10px 16px; margin-bottom: 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 12px; color: var(--text-muted);
+  }
+  .stats-bar strong { color: var(--text); }
+
+  /* ── Group card ── */
+  .group-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 28px; overflow: hidden;
+  }
+  .group-header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: #151515;
+  }
+  .group-title { font-size: 13px; font-weight: 600; }
+  .badge {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 8px; font-size: 10px; color: var(--text-muted);
+  }
+  .badge-exact  { background: #1a3a1a; border-color: var(--success); color: var(--success); }
+  .badge-dist   { font-family: monospace; }
+  .badge-docs   { background: #1a2a3a; border-color: var(--accent); color: var(--accent); }
+
+  /* ── Members grid — s'adapte au nombre de vidéos ── */
+  .members-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    border-top: none;
+  }
+  .member-col {
+    min-width: 0;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .member-col:last-child { border-right: none; }
+
+  .doc-header {
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 11px; color: var(--text-muted); background: #1c1c1c;
+  }
+  .doc-header strong { color: var(--text); }
+  .doc-header a { color: var(--accent); text-decoration: none; }
+  .doc-header a:hover { text-decoration: underline; }
+
+  /* ── Scène ── */
+  .rscene { border-bottom: 1px solid var(--border); }
+  .rscene:last-child { border-bottom: none; }
+  .rscene-header {
+    padding: 6px 14px; display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: var(--text-muted); background: #181818;
+    border-bottom: 1px solid #1e1e1e;
+  }
+  .rscene-title { font-weight: 600; color: var(--text); }
+  .rscene-time  { font-family: monospace; font-size: 10px; }
+
+  .kf-strip { display: flex; overflow-x: auto; }
+  .kf-thumb { flex-shrink: 0; position: relative; }
+  .kf-thumb img { display: block; height: 140px; width: auto; object-fit: cover; }
+  .kf-label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.7); padding: 3px 5px;
+    font-size: 9px; color: #bbb; text-align: center;
+  }
+  .no-kf { padding: 20px 14px; font-size: 11px; color: #444; }
+
+  .transcript-mini {
+    padding: 8px 14px; font-size: 11px; color: var(--text-muted);
+    font-style: italic; line-height: 1.5; border-top: 1px solid #1e1e1e;
+  }
+  .transcript-mini.empty { color: #444; }
+
+  /* ── Noise section ── */
+  .noise-section { margin-top: 40px; }
+  .section-title {
+    font-size: 13px; font-weight: 600; color: var(--text-muted);
+    margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+  .noise-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .noise-chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 5px; padding: 4px 10px; font-size: 11px;
+    color: var(--text-muted); font-family: monospace;
+  }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 14px; }
+</style>
+
+{% if error %}
+<div class="alert-error">{{ error }}</div>
+{% endif %}
+
+{% if groups is none %}
+<div class="empty-state">Entrez un Analyse ID pour visualiser les reprises.</div>
+
+{% elif groups|length == 0 and not error %}
+<div class="empty-state">Aucune reprise détectée{% if analyse_id %} pour l'analyse {{ analyse_id }}{% endif %}.</div>
+
+{% else %}
+<!-- Stats -->
+<div class="stats-bar">
+  {% if analyse_id %}<span>Analyse <strong>{{ analyse_id }}</strong></span>{% endif %}
+  <span><strong>{{ n_groups }}</strong> groupe{{ 's' if n_groups > 1 else '' }}</span>
+  <span><strong>{{ n_edges }}</strong> paires</span>
+  <span><strong>{{ n_nodes }}</strong> nœuds</span>
+  {% if noise_groups %}<span><strong>{{ noise_groups|length }}</strong> groupes bruit</span>{% endif %}
+</div>
+
+<!-- Groupes de reprises -->
+{% for group in groups %}
+<div class="group-card">
+
+  <div class="group-header">
+    <span class="group-title">Groupe #{{ loop.index }}</span>
+    <span class="badge">{{ group.length }} scène{{ 's' if group.length > 1 else '' }}</span>
+    <span class="badge badge-docs">{{ group.doc_count }} vidéo{{ 's' if group.doc_count > 1 else '' }}</span>
+    <span class="badge badge-dist">dist {{ "%.4f"|format(group.best_distance) }}</span>
+    {% if group.is_exact_reprise %}
+    <span class="badge badge-exact">reprise exacte</span>
+    {% endif %}
+  </div>
+
+  <div class="members-grid">
+  {% for member in group.members %}
+    <div class="member-col">
+      <div class="doc-header">
+        <strong>doc {{ member.doc_id }}</strong>
+        <a href="http://localhost:5001/keyframes?doc_id={{ member.doc_id }}" target="_blank">keyframes ↗</a>
+      </div>
+
+      {% for scene in member.scenes %}
+      <div class="rscene">
+        <div class="rscene-header">
+          <span class="rscene-title">Scène {{ scene.scene_index }}</span>
+          {% if scene.scene_doc_id %}
+          <span class="badge" style="font-family:monospace">id {{ scene.scene_doc_id }}</span>
+          {% endif %}
+          {% if scene.start_ms %}
+          <span class="rscene-time">{{ "%.1f"|format(scene.start_ms / 1000) }}s → {{ "%.1f"|format(scene.end_ms / 1000) }}s</span>
+          {% endif %}
+        </div>
+
+        {% if scene.keyframes %}
+        <div class="kf-strip">
+          {% for kf in scene.keyframes | sort(attribute='rank') %}
+          <div class="kf-thumb">
+            <img src="/media/{{ reprise_work_key }}/scene{{ scene.scene_doc_id }}_kf{{ kf.rank }}.jpg"
+                 alt="kf{{ kf.rank }}" loading="lazy">
+            <div class="kf-label">#{{ kf.rank }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-kf">Aucun keyframe</div>
+        {% endif %}
+
+        <div class="transcript-mini {% if not scene.transcript %}empty{% endif %}">
+          {{ scene.transcript or '— pas de transcription —' }}
+        </div>
+      </div>
+      {% endfor %}
+
+    </div>
+  {% endfor %}
+  </div><!-- members-grid -->
+
+</div><!-- group-card -->
+{% endfor %}
+
+{% if noise_groups %}
+<div class="noise-section">
+  <div class="section-title">Groupes filtrés (bruit)</div>
+  <div class="noise-list">
+    {% for g in noise_groups %}
+    <span class="noise-chip">{{ g.length }} scène{{ 's' if g.length > 1 else '' }} · {{ g.doc_count }} docs</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

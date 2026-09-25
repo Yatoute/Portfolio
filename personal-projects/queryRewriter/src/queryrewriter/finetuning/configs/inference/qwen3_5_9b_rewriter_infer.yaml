@@ -1,0 +1,5 @@
+model_name_or_path: Qwen/Qwen3.5-9B
+adapter_name_or_path: /workspace/queryrewriter-train/saves/qwen3_5_9b_rewriter_qlora/checkpoint-866
+template: qwen
+infer_backend: huggingface
+finetuning_type: lora

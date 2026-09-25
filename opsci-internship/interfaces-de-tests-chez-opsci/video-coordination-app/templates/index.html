@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Reprises vidéo{% endblock %}
+
+{% block content %}
+<style>
+  .landing { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+  .landing h1 { font-size: 20px; color: var(--text); margin-bottom: 12px; }
+  .landing p  { font-size: 13px; line-height: 1.7; max-width: 420px; margin: 0 auto; }
+  .landing .hint { margin-top: 20px; font-size: 11px; color: #444; font-family: monospace; }
+</style>
+<div class="landing">
+  <h1>Visualiseur de reprises de séquences</h1>
+  <p>Entrez un <strong>Analyse ID</strong> dans la barre du haut pour charger le réseau de reprises.
+     Les scènes et keyframes sont enrichies depuis la BDD.</p>
+  <div class="hint">
+    Source GCS → gs://your-bucket/reprise_network_{analyse_id}.pkl<br>
+    Source BDD → reconstruction depuis join_chunk_chunk (type='coordination')
+  </div>
+</div>
+{% endblock %}

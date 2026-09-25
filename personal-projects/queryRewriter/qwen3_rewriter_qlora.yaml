@@ -1,0 +1,49 @@
+model_name_or_path: Qwen/Qwen3.5-35B-A3B
+stage: sft
+do_train: true
+finetuning_type: lora
+quantization_bit: 4
+template: qwen
+
+dataset_dir: /workspace/queryrewriter-train/dataset
+dataset: qwen_rewriter_train
+eval_dataset: qwen_rewriter_test
+
+cutoff_len: 1024
+max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 8
+
+output_dir: /workspace/queryrewriter-train/saves/qwen3_35b_a3b_rewriter_qlora
+logging_steps: 10
+save_steps: 200
+eval_steps: 200
+plot_loss: true
+overwrite_output_dir: false
+save_total_limit: 2
+
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 2.0e-5
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_steps: 100
+bf16: true
+ddp_timeout: 180000000
+flash_attn: disabled
+
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: all
+
+val_size: 0.0
+eval_strategy: steps
+save_strategy: steps
+
+metric_for_best_model: eval_loss
+greater_is_better: false
+load_best_model_at_end: true
+
+report_to: none

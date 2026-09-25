@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <h2>Upload a short video</h2>
+  <p class="muted">
+    Max {{ max_duration_s }}s, {{ max_upload_mb }}MB — this demo runs on a small CPU-only
+    machine, so clips are kept short to keep processing time reasonable.
+  </p>
+
+  <form id="upload-form" style="margin-top: 16px;">
+    <input type="file" id="video-file" name="file" accept="video/*" required>
+    <button type="submit" class="btn" style="margin-top: 12px;">Process video</button>
+  </form>
+
+  <div id="upload-progress" style="display:none; margin-top: 16px;">
+    <p class="muted" id="upload-status">Uploading...</p>
+    <div class="progress-bar"><div class="progress-bar-fill" id="upload-progress-fill" style="width:0%"></div></div>
+  </div>
+
+  <div id="upload-error" class="error-box" style="display:none;"></div>
+</div>
+
+<div class="section-title">Translation engine demo</div>
+<div class="card">
+  <p class="muted">Same underlying engine as the -90% cost production translation service (Argos / CTranslate2), running in process.</p>
+  <div class="translate-grid">
+    <div>
+      <select id="translate-from">
+        {% for code, name in languages.items() %}
+        <option value="{{ code }}" {% if code == 'en' %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <textarea id="translate-source" placeholder="Enter text to translate..." style="margin-top:8px;"></textarea>
+    </div>
+    <div style="padding-top: 8px; text-align: center;">→</div>
+    <div>
+      <select id="translate-to">
+        {% for code, name in languages.items() %}
+        <option value="{{ code }}" {% if code == 'fr' %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <textarea id="translate-result" placeholder="Translation..." readonly style="margin-top:8px;"></textarea>
+    </div>
+  </div>
+  <button class="btn" id="translate-btn" style="margin-top: 12px;">Translate</button>
+  <div id="translate-error" class="error-box" style="display:none;"></div>
+</div>
+
+<script>
+const uploadForm = document.getElementById('upload-form');
+uploadForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById('video-file');
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  document.getElementById('upload-error').style.display = 'none';
+  document.getElementById('upload-progress').style.display = 'block';
+  document.getElementById('upload-status').textContent = 'Uploading and validating...';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Upload failed');
+    window.location.href = `/result/${data.job_id}`;
+  } catch (err) {
+    document.getElementById('upload-progress').style.display = 'none';
+    const errBox = document.getElementById('upload-error');
+    errBox.textContent = err.message;
+    errBox.style.display = 'block';
+  }
+});
+
+document.getElementById('translate-btn').addEventListener('click', async () => {
+  const text = document.getElementById('translate-source').value.trim();
+  const from_code = document.getElementById('translate-from').value;
+  const to_code = document.getElementById('translate-to').value;
+  const errBox = document.getElementById('translate-error');
+  errBox.style.display = 'none';
+
+  if (!text) return;
+
+  const btn = document.getElementById('translate-btn');
+  btn.disabled = true;
+  btn.textContent = 'Translating...';
+
+  try {
+    const res = await fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, from_code, to_code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Translation failed');
+    document.getElementById('translate-result').value = data.translated;
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Translate';
+  }
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,7 @@
+psutil
+opencv-python==4.13.0.92
+open-clip-torch==3.3.0
+imagehash==4.3.1
+Pillow>=10.0.0
+--extra-index-url https://europe-west1-python.pkg.dev/demo-project/opsci-python-repository/simple/
+gcpOpsci>=1.0.109

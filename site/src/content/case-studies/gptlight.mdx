@@ -1,0 +1,83 @@
+> **Testez-le en direct** — collez un SMS ou un email sur la [démo classifieur de spam](/demos/spam-classifier) pour voir le modèle prédire spam/ham en temps réel.
+
+## Pourquoi ce projet
+
+La plupart des projets "LLM" se limitent à appeler l'API d'un modèle
+propriétaire. Je voulais vérifier que je comprenais vraiment ce qui se passe
+à l'intérieur d'un Transformer — pas seulement l'utiliser, mais être capable
+de le reconstruire, de charger des poids réels dedans, et de le fine-tuner.
+
+## Ce que j'ai construit
+
+### Un GPT-2 from scratch
+
+Implémentation complète en PyTorch : embeddings de tokens et de position,
+attention causale multi-têtes, feed-forward avec GELU, blocs résiduels
+pre-LayerNorm, weight tying entre la couche d'embedding et la tête de
+sortie — l'architecture exacte de GPT-2 124M (50 257 tokens de vocabulaire,
+12 couches, 12 têtes d'attention, embeddings de 768 dimensions, contexte de
+1024 tokens), pas une version simplifiée.
+
+### Le chargement des poids officiels OpenAI
+
+La partie la plus révélatrice techniquement : charger les checkpoints
+TensorFlow originaux de GPT-2 (124M et 355M) dans mon implémentation
+PyTorch, en comprenant leur format interne exact — pas via la méthode de
+chargement automatique standard.
+
+- Séparer la matrice d'attention QKV fusionnée (telle que stockée dans le
+  checkpoint original) en trois matrices Query, Key, Value distinctes.
+- Transposer les poids stockés au format convolutionnel de TensorFlow vers
+  le format de couche dense attendu par PyTorch.
+- Réassigner les paramètres de LayerNorm (scale/shift) et relier
+  correctement l'embedding de tokens à la tête de sortie (weight tying).
+
+Résultat vérifié : chargement sans erreur, toutes les clés du modèle
+correctement associées, et génération de texte cohérente, pour les deux
+tailles de modèle.
+
+### Fine-tuning supervisé — classification de spam
+
+Le backbone pré-entraîné est gelé, seuls le dernier bloc Transformer, la
+LayerNorm finale et une nouvelle tête de classification à 2 classes sont
+entraînés, sur le jeu SMS Spam Collection (747 exemples équilibrés,
+split 70/10/20).
+
+<div className="not-prose grid grid-cols-1 gap-3 sm:grid-cols-3 my-6">
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">~48%</div>
+    <div className="text-xs text-[var(--muted)]">accuracy avant fine-tuning (niveau du hasard)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">96.96%</div>
+    <div className="text-xs text-[var(--muted)]">accuracy sur le test set après 15 epochs</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">97.92%</div>
+    <div className="text-xs text-[var(--muted)]">accuracy en validation</div>
+  </div>
+</div>
+
+Concrètement, une fois le fine-tuning terminé, le modèle classe un texte
+brut en une passe :
+
+```text
+Entrée  : "WINNER!! You have been selected to receive a £900 prize reward!
+           To claim call 09061701461."
+Sortie  : spam (confiance 99.2%)
+
+Entrée  : "Hey, are we still on for lunch tomorrow at 12?"
+Sortie  : ham (confiance 98.7%)
+```
+
+## Prochaine étape
+
+Un second notebook prépare le fine-tuning par instructions sur GPT-2 355M
+(dataset de 1 100 exemples au format Alpaca, collate function avec masquage
+de perte sur le padding déjà écrite et testée) — l'extension naturelle une
+fois le principe validé sur la classification.
+
+## Stack technique
+
+PyTorch · tiktoken (BPE) · checkpoints officiels GPT-2 (OpenAI, format
+TensorFlow) · NumPy

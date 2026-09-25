@@ -1,0 +1,12 @@
+{
+  "name": "monitoring-agent",
+  "version": "1.0.0",
+  "description": "HTTP server wrapping Claude Code for automated scrapper monitoring",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

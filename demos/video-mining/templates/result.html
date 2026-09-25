@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div id="processing-card" class="card">
+  <h2>Processing your video...</h2>
+  <p class="muted" id="stage-label">Queued</p>
+  <div class="progress-bar"><div class="progress-bar-fill" id="progress-fill" style="width:0%"></div></div>
+  <p class="muted" style="margin-top: 10px;">
+    Scene detection → CLIP keyframe selection → WhisperX transcription. On a CPU-only demo
+    machine this can take a couple of minutes for a short clip.
+  </p>
+</div>
+
+<div id="error-card" class="card" style="display:none;">
+  <h2>Something went wrong</h2>
+  <div class="error-box" id="error-message"></div>
+</div>
+
+<div id="results" style="display:none;">
+  <div class="card">
+    <video id="preview-video" controls style="width:100%; border-radius: 8px;"></video>
+    <p class="muted" style="margin-top: 8px;" id="video-meta"></p>
+  </div>
+
+  <div class="section-title">Scenes, keyframes &amp; transcript</div>
+  <div id="scenes-container"></div>
+</div>
+
+<script>
+const jobId = "{{ job_id }}";
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+async function poll() {
+  const res = await fetch(`/api/jobs/${jobId}`);
+  const data = await res.json();
+
+  if (data.status === 'error') {
+    document.getElementById('processing-card').style.display = 'none';
+    document.getElementById('error-card').style.display = 'block';
+    document.getElementById('error-message').textContent = data.error;
+    return;
+  }
+
+  if (data.status !== 'done') {
+    document.getElementById('stage-label').textContent =
+      data.status === 'queued' ? 'Queued — waiting for the previous video to finish...' : `Stage: ${data.stage || '...'}`;
+    document.getElementById('progress-fill').style.width = `${Math.round((data.progress || 0) * 100)}%`;
+    setTimeout(poll, 2000);
+    return;
+  }
+
+  document.getElementById('processing-card').style.display = 'none';
+  const resultRes = await fetch(`/api/jobs/${jobId}/result`);
+  const result = await resultRes.json();
+  renderResult(result);
+}
+
+function renderResult(result) {
+  document.getElementById('results').style.display = 'block';
+
+  const video = document.getElementById('preview-video');
+  video.src = `/api/jobs/${jobId}/video`;
+
+  const meta = result.metadata;
+  document.getElementById('video-meta').textContent =
+    `${meta.width}×${meta.height} · ${meta.duration.toFixed(1)}s · ${result.scenes.length} scene(s) · language: ${result.language || 'n/a'}`;
+
+  const container = document.getElementById('scenes-container');
+  container.innerHTML = '';
+
+  for (const scene of result.scenes) {
+    const card = document.createElement('div');
+    card.className = 'scene-card';
+
+    const header = document.createElement('div');
+    header.className = 'scene-header';
+    header.innerHTML = `<span class="scene-title">Scene ${scene.index + 1}</span>
+      <span class="scene-time">${fmtTime(scene.start_ms)} – ${fmtTime(scene.end_ms)}</span>`;
+    card.appendChild(header);
+
+    if (scene.keyframes && scene.keyframes.length) {
+      const strip = document.createElement('div');
+      strip.className = 'keyframe-strip';
+      for (const kf of scene.keyframes) {
+        const img = document.createElement('img');
+        img.src = `/api/jobs/${jobId}/keyframes/${kf.filename}`;
+        img.loading = 'lazy';
+        img.title = `frame ${kf.frame_index}`;
+        img.addEventListener('click', () => { video.currentTime = scene.start_ms / 1000; video.play(); });
+        img.style.cursor = 'pointer';
+        strip.appendChild(img);
+      }
+      card.appendChild(strip);
+    }
+
+    const transcript = document.createElement('div');
+    transcript.className = scene.transcript ? 'scene-transcript' : 'scene-transcript empty';
+    transcript.textContent = scene.transcript || '(no speech detected in this scene)';
+    card.appendChild(transcript);
+
+    container.appendChild(card);
+  }
+}
+
+poll();
+</script>
+
+{% endblock %}

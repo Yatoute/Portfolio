@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% set active_url = "/video" %}
+{% set active_page = "video" %}
+
+{% block title %}Vidéo — doc {{ doc_id }}{% endblock %}
+
+{% block content %}
+<style>
+  .meta-bar { display:flex; gap:20px; flex-wrap:wrap; align-items:center;
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 16px; margin-bottom:20px;
+    font-size:12px; color:var(--text-muted); }
+  .meta-bar span strong { color:var(--text); }
+
+  /* ── Lecteurs ── */
+  .players { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+  .player-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .player-label { padding:10px 14px; font-size:12px; font-weight:600;
+    border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+  .player-label .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .player-label .dot.green { background:var(--success); }
+  video { width:100%; display:block; background:#000; max-height:70vh; }
+
+  /* ── Timeline scènes ── */
+  .timeline-wrap { margin-bottom:16px; }
+  .timeline-label { font-size:11px; color:var(--text-muted); margin-bottom:6px; }
+  .timeline { display:flex; height:20px; border-radius:6px; overflow:hidden;
+    border:1px solid var(--border); cursor:pointer; }
+  .scene-seg {
+    height:100%; transition:filter 0.1s;
+    border-right:1px solid rgba(0,0,0,0.3);
+    position:relative;
+  }
+  .scene-seg:last-child { border-right:none; }
+  .scene-seg.active { filter:brightness(1.8); }
+  .scene-seg:hover { filter:brightness(1.4); }
+
+  /* ── Info scène active ── */
+  .scene-info-bar {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; padding:14px 18px;
+  }
+  .scene-info-header { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .scene-badge { background:var(--accent); color:#fff; font-size:11px;
+    font-weight:700; padding:3px 9px; border-radius:4px; }
+  .scene-timing { font-size:11px; color:var(--text-muted); }
+  .scene-transcript { font-size:13px; color:var(--text); line-height:1.7;
+    font-style:italic; min-height:40px; }
+  .scene-transcript.empty { color:#444; }
+
+  /* ── Keyframes de la scène active ── */
+  .scene-kf-strip { display:flex; gap:6px; overflow-x:auto; margin-top:12px;
+    padding-bottom:4px; }
+  .scene-kf-strip img { height:80px; width:auto; border-radius:4px;
+    border:2px solid transparent; flex-shrink:0; opacity:0.7; transition:opacity 0.1s; }
+  .scene-kf-strip img.current-kf { border-color:var(--accent); opacity:1; }
+</style>
+
+<!-- Data scènes injectée en JSON pour le JS -->
+<script id="scenes-data" type="application/json">
+{{ scenes | tojson }}
+</script>
+
+<!-- Meta bar -->
+<div class="meta-bar">
+  <span>Doc <strong>{{ doc_id }}</strong></span>
+  <span>{{ video_meta.get('width') }}×{{ video_meta.get('height') }}</span>
+  <span>{{ video_meta.get('fps') }} fps</span>
+  <span><strong>{{ "%.1f"|format(video_meta.get('duration_seconds', 0)) }}s</strong></span>
+  <span>{{ scenes|length }} scènes</span>
+</div>
+
+<!-- Lecteurs vidéo -->
+<div class="players">
+  <div class="player-wrap">
+    <div class="player-label"><span class="dot"></span> Vidéo originale</div>
+    <video id="video-original" controls preload="metadata"
+           src="/media/{{ work_key }}/original.mp4"></video>
+  </div>
+  <div class="player-wrap">
+    <div class="player-label"><span class="dot green"></span> Vidéo reconstruite (keyframes)</div>
+    <video id="video-reconstructed" controls preload="metadata"
+           src="/media/{{ work_key }}/reconstructed.mp4"></video>
+  </div>
+</div>
+
+<!-- Timeline des scènes -->
+<div class="timeline-wrap">
+  <div class="timeline-label">Timeline des scènes — cliquez pour naviguer</div>
+  <div class="timeline" id="timeline">
+    {% set total_dur = video_meta.get('duration_seconds', 1) %}
+    {% for scene in scenes %}
+    {% set pct = ((scene.end_seconds - scene.start_seconds) / total_dur * 100) %}
+    {% set hue = (scene.scene_index * 41 + 200) % 360 %}
+    <div class="scene-seg"
+         style="width:{{ pct }}%; background:hsl({{ hue }},40%,28%);"
+         data-index="{{ scene.scene_index }}"
+         data-start="{{ scene.start_seconds }}"
+         title="Scène {{ scene.scene_index }} — {{ '%.1f'|format(scene.start_seconds) }}s → {{ '%.1f'|format(scene.end_seconds) }}s">
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Info scène active -->
+<div class="scene-info-bar">
+  <div class="scene-info-header">
+    <span class="scene-badge" id="scene-badge">Scène 0</span>
+    <span class="scene-timing" id="scene-timing">0.0s → 0.0s</span>
+  </div>
+  <div class="scene-transcript" id="scene-transcript">—</div>
+  <div class="scene-kf-strip" id="kf-strip"></div>
+</div>
+
+<script>
+const scenes = JSON.parse(document.getElementById('scenes-data').textContent);
+const workKey = "{{ work_key }}";
+const totalDur = {{ video_meta.get('duration_seconds', 0) }};
+
+const videoOrig = document.getElementById('video-original');
+const videoRec  = document.getElementById('video-reconstructed');
+
+const sceneBadge     = document.getElementById('scene-badge');
+const sceneTiming    = document.getElementById('scene-timing');
+const sceneTranscript= document.getElementById('scene-transcript');
+const kfStrip        = document.getElementById('kf-strip');
+const timelineEl     = document.getElementById('timeline');
+
+let lastSceneIdx = -1;
+
+// ── Trouver la scène active selon le timestamp ──
+function findScene(t) {
+  for (const s of scenes) {
+    if (t >= s.start_seconds && t < s.end_seconds) return s;
+  }
+  return scenes[scenes.length - 1];
+}
+
+// ── Trouver le keyframe actif dans la scène ──
+function findActiveKf(scene, t) {
+  const kfs = [...(scene.keyframes || [])].sort((a, b) => a.rank - b.rank);
+  let active = kfs[0];
+  for (const kf of kfs) {
+    if (kf.timestamp_seconds <= t) active = kf;
+  }
+  return active;
+}
+
+// ── Mise à jour de l'interface ──
+function updateUI(t) {
+  const scene = findScene(t);
+  const idx = scene.scene_index;
+
+  // Mettre à jour les infos scène (seulement si scène change)
+  if (idx !== lastSceneIdx) {
+    lastSceneIdx = idx;
+
+    sceneBadge.textContent = `Scène ${idx}`;
+    sceneTiming.textContent = `${scene.start_seconds.toFixed(1)}s → ${scene.end_seconds.toFixed(1)}s  (${(scene.end_seconds - scene.start_seconds).toFixed(1)}s)`;
+
+    const tr = (scene.transcript || '').trim();
+    sceneTranscript.textContent = tr || '— pas de transcription —';
+    sceneTranscript.classList.toggle('empty', !tr);
+
+    // Rebuilder la strip de keyframes
+    kfStrip.innerHTML = '';
+    const kfs = [...(scene.keyframes || [])].sort((a, b) => a.rank - b.rank);
+    for (const kf of kfs) {
+      const img = document.createElement('img');
+      img.src = `/media/${workKey}/s${idx}_kf${kf.rank}.jpg`;
+      img.alt = `kf${kf.rank}`;
+      img.title = `#${kf.rank} — ${kf.timestamp_seconds}s`;
+      img.dataset.rank = kf.rank;
+      img.dataset.ts   = kf.timestamp_seconds;
+      img.addEventListener('click', () => {
+        videoOrig.currentTime = kf.timestamp_seconds;
+      });
+      kfStrip.appendChild(img);
+    }
+
+    // Highlight segment timeline
+    timelineEl.querySelectorAll('.scene-seg').forEach(el => {
+      el.classList.toggle('active', parseInt(el.dataset.index) === idx);
+    });
+  }
+
+  // Surligner le keyframe courant dans la strip
+  kfStrip.querySelectorAll('img').forEach(img => {
+    img.classList.toggle('current-kf', parseFloat(img.dataset.ts) <= t
+      && (img.nextElementSibling === null || parseFloat(img.nextElementSibling.dataset.ts) > t));
+  });
+}
+
+// ── Sync des deux vidéos ──
+videoOrig.addEventListener('timeupdate', () => {
+  updateUI(videoOrig.currentTime);
+  if (Math.abs(videoRec.currentTime - videoOrig.currentTime) > 0.4) {
+    videoRec.currentTime = videoOrig.currentTime;
+  }
+});
+
+videoOrig.addEventListener('seeking', () => {
+  videoRec.currentTime = videoOrig.currentTime;
+});
+
+videoOrig.addEventListener('play', () => {
+  if (videoRec.paused) videoRec.play().catch(() => {});
+});
+
+videoOrig.addEventListener('pause', () => {
+  if (!videoRec.paused) videoRec.pause();
+});
+
+// ── Clic sur la timeline → seek ──
+timelineEl.addEventListener('click', (e) => {
+  const seg = e.target.closest('.scene-seg');
+  if (seg) {
+    videoOrig.currentTime = parseFloat(seg.dataset.start);
+    videoOrig.play().catch(() => {});
+  }
+});
+
+// ── Init ──
+updateUI(0);
+</script>
+{% endblock %}

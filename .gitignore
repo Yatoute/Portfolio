@@ -1,0 +1,34 @@
+# Secrets — never commit
+.env
+.env.*
+!*.env.template
+!*.env.example
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[oc]
+.venv/
+build/
+dist/
+wheels/
+*.egg-info
+
+# Node (per-project node_modules are also gitignored individually)
+node_modules/
+.vercel
+
+# Next.js build output
+.next/
+
+# Model weights, datasets, media (too large for git — use LFS / HF Hub if needed)
+*.pt
+*.ckpt*
+*.jsonl
+personal-projects/gptlight/assets/gpt2/
+personal-projects/queryRewriter/data/
+personal-projects/queryRewriter/src/queryrewriter/finetuning/dataset/
+personal-projects/WatchAgent/media/
+personal-projects/WatchAgent/scene_keyframes*/

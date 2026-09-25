@@ -1,0 +1,131 @@
+## Le problème
+
+Une plateforme de collecte de données sociales fait tourner des dizaines de
+Cloud Functions de scraping en production (Facebook, LinkedIn, Instagram,
+TruthSocial, Reddit). Ces Cloud Functions de scraping cassent régulièrement pour des raisons qui
+n'ont rien à voir avec des bugs de code : une plateforme change la structure
+de ses pages ou de son API, une session expire, un compte se fait
+rate-limiter, un challenge anti-bot bloque la connexion. Le temps qu'un
+humain remarque le problème, diagnostique la cause, et déploie un correctif,
+on perd des heures de collecte — parfois sur des sujets à fenêtre temporelle
+courte.
+
+## Ce que j'ai construit
+
+Un agent LLM qui **monitore en continu** les Cloud Functions de scraping,
+diagnostique la panne exacte, et corrige lui-même le code quand c'est un
+problème de logique d'extraction — pas juste un système d'alerte qui prévient
+un humain.
+
+L'agent fait tourner le **Claude Code CLI en subprocess**, piloté par un
+runbook opérationnel de plus de 1200 lignes (un système de commande markdown)
+qui définit précisément son périmètre d'action, étape par étape — diagnostic,
+correction, validation, déploiement. Ce n'est pas un framework d'agents
+générique : c'est un runbook de SRE écrit à la main, avec des règles
+explicites — pas d'ajout de fonctionnalité, pas de refactoring, correction
+minimale du problème identifié, confirmation par relecture avant toute action
+irréversible.
+
+### Trois niveaux de diagnostic
+
+1. **Niveau 0** — des posts sont bien insérés en base mais avec des champs
+   critiques vides : le parser n'a pas su traiter le payload.
+2. **Niveau 1** — le parser JSON ne reconnaît plus la structure de nœuds de
+   la plateforme (dérive de schéma côté réseau social).
+3. **Niveau 2** — la Cloud Function de scraping ne collecte plus rien du tout : session
+   expirée, identifiants de requête API périmés, filtres trop restrictifs,
+   ou rate-limiting.
+
+Extrait représentatif d'un diagnostic niveau 1 (dérive de schéma) tel que
+l'agent le consigne avant de corriger :
+
+```text
+[ALERT] linkedin-scraper: 0/847 posts avec champ `author_id` rempli
+        depuis 04:12 UTC (taux normal : 98%+)
+
+[DIAGNOSIS] Le nœud JSON attendu `data.feedUpdates[].actor.urn` est
+            absent des réponses récentes ; le chemin observé est
+            désormais `data.feedUpdates[].actorEntity.entityUrn`.
+            → dérive de schéma côté plateforme, pas un bug applicatif.
+
+[FIX] Chemin de parsing mis à jour + fallback sur l'ancien chemin
+      pendant la fenêtre de transition.
+
+[VALIDATION] Ré-exécution locale sur 50 posts réels : 49/50 champs
+             `author_id` correctement remplis → déploiement autorisé.
+```
+
+### Diagnostic et correction — pas seulement des alertes
+
+- Reproduit systématiquement le bug **en local**, dans un environnement de
+  test isolé des Cloud Functions, avant de toucher au code — jamais de
+  correctif à l'aveugle contre la prod.
+- Édite directement le code d'extraction pour corriger une dérive de schéma,
+  en s'appuyant sur les logs pour cartographier les vrais chemins de données
+  retournés par la plateforme.
+- **Intercepte le trafic réseau via Playwright** pour retrouver un
+  identifiant de requête API (query ID GraphQL) devenu périmé quand une
+  plateforme fait évoluer son schéma — jusqu'à comparer les paramètres
+  interceptés entre l'ancienne et la nouvelle version quand l'endpoint cible
+  n'est pas capturé directement.
+- Reconnecte des sessions expirées via automatisation Playwright. Cas réel
+  typique : les cookies de session d'un profil Facebook se déconnectent, la
+  plateforme redemande une authentification, l'agent est notifié et tente la
+  reconnexion — il tombe sur un **reCAPTCHA Enterprise** (grille d'images à
+  résoudre). Il le résout lui-même : le challenge est découpé en fenêtres de
+  4 cases adjacentes avec coordonnées, l'agent lit le screenshot global (pour
+  identifier l'objet demandé) et toutes les fenêtres d'images **en une seule
+  passe parallèle**, puis répond avec les indices des cases positives.
+  Contrainte réelle qui a façonné cette conception : une session reCAPTCHA
+  expire en ~2-3 minutes, et déléguer la lecture d'image à un sous-agent par
+  round coûtait environ 1 minute par image (le runtime n'ayant pas d'outil de
+  sous-agent fiable à ce moment-là) — largement de quoi épuiser le délai. La
+  lecture directe, en une passe, est le seul chemin qui bat le TTL. Le
+  serveur ne conclut à une vraie 2FA qu'après avoir déjà tenté et épuisé la
+  résolution reCAPTCHA — et avant toute conclusion manuelle, l'agent tente
+  aussi de récupérer un code de double authentification par lecture d'e-mail
+  (IMAP), la majorité des "checkpoints" observés étant en réalité de simples
+  reCAPTCHA solubles.
+- Met en pause / reprend les files Cloud Tasks concernées, et ajuste
+  dynamiquement leur capacité de dispatch **pendant** qu'il reconnecte les
+  comptes un par un — la capacité remonte au fur et à mesure, pas d'un coup.
+- Lance **un sous-agent par profil Chrome** à reconnecter en parallèle,
+  chacun dans un contexte isolé — évite qu'une longue session d'images de
+  CAPTCHA ne sature le contexte d'un agent unique.
+
+### Validation obligatoire avant tout déploiement
+
+Aucun correctif n'est considéré terminé sans un passage par une boucle de
+validation de bout en bout, toujours en local : ré-exécution de la Cloud Function de scraping,
+vérification que les champs auparavant manquants sont bien remplis,
+insertion complète en base de test, puis passage par le pipeline de parsing
+JSON pour confirmer qu'aucune régression n'apparaît sur d'autres champs. Le
+déploiement lui-même suit un protocole strict — vérifier qu'aucun déploiement
+Terraform n'est en cours, capturer la révision courante avant de pousser,
+travailler sur une branche de déploiement dédiée (jamais directement sur la
+branche principale) — avant validation post-déploiement.
+
+### Garde-fous
+
+C'est la partie qui compte le plus pour un agent qui a un accès en écriture
+à du code et de l'infrastructure de production : le runbook définit un
+périmètre strict (aucune fonctionnalité nouvelle, aucun refactoring, aucune
+modification en dehors du correctif minimal), et impose une relecture de
+confirmation avant toute action destructive comme désactiver une clé API.
+L'agent commite ses changements sous sa propre identité de service, pas
+sous celle d'un développeur humain — traçabilité complète de ce qu'il a
+touché.
+
+## Architecture
+
+Deux entrypoints Node.js sur une même image Docker : un service Cloud Run
+toujours actif qui reçoit les signaux d'échec des Cloud Functions de scraping et les persiste
+dans une file de demandes, et un Cloud Run **Job** (scale-to-zero, facturé
+uniquement pendant son exécution) qui traite la file puis s'arrête après un
+délai d'inactivité — pas de coût d'un service always-on pour une charge de
+travail intermittente.
+
+## Stack technique
+
+Claude Code CLI · Node.js · Playwright (automatisation + interception réseau)
+· Terraform · Cloud Run (Service + Jobs) · Cloud Tasks · Postgres

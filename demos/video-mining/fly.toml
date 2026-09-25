@@ -1,0 +1,32 @@
+# fly.toml app configuration file generated for video-mining-yatoute-demo on 2026-08-09T01:55:15+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'video-mining-yatoute-demo'
+primary_region = 'cdg'
+
+[build]
+[env]
+  VIDEOMINING_ALLOWED_ORIGINS = 'https://yatoute.vercel.app'
+  VIDEOMINING_MAX_DURATION_S = '180'
+  VIDEOMINING_MAX_UPLOAD_MB = '25'
+  VIDEOMINING_RATE_LIMIT_TRANSLATE = '30/hour'
+  VIDEOMINING_RATE_LIMIT_UPLOAD = '5/hour'
+  VIDEOMINING_STORAGE_DIR = '/data/storage'
+  VIDEOMINING_WHISPER_MODEL = 'small'
+
+[[mounts]]
+  source = 'videomining_storage'
+  destination = '/data/storage'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'suspend'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = 'shared-cpu-2x'
+  memory = '4gb'

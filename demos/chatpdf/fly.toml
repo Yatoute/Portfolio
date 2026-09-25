@@ -1,0 +1,47 @@
+# fly.toml app configuration file generated for chatpdf-yatoute-demo on 2026-08-09T01:20:41+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'chatpdf-yatoute-demo'
+primary_region = 'cdg'
+
+[build]
+[env]
+  CHATPDF_PRELOAD_EXAMPLE = 'true'
+  CHATPDF_RATE_LIMIT_CHAT = '20/hour'
+  CHATPDF_RATE_LIMIT_SESSION = '10/hour'
+  CHATPDF_RATE_LIMIT_UPLOAD = '3/day'
+  CHATPDF_STORAGE_DIR = '/data/storage'
+  PORT = '8080'
+  PROXY_PORT = '8080'
+
+[[mounts]]
+  source = 'chatpdf_storage'
+  destination = '/data/storage'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'suspend'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # nginx (8080) starts and accepts connections several seconds before the
+  # FastAPI backend behind it (8000) finishes booting — without this check,
+  # Fly's proxy treats the machine as ready as soon as nginx is up, and
+  # routes real requests into a window where nginx 502s with no CORS
+  # headers (browsers report that as a generic "CORS blocked" error).
+  # Gating on the API's own health endpoint (proxied through the same
+  # nginx path real traffic uses) makes the proxy hold requests until the
+  # whole stack, not just nginx, is actually ready.
+  [[http_service.checks]]
+    interval = "2s"
+    timeout = "2s"
+    grace_period = "1s"
+    method = "GET"
+    path = "/api/v1/health"
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '2gb'

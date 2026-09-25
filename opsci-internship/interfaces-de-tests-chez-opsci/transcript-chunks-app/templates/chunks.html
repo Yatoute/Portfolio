@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block title %}Chunks — {{ video_path | basename }}{% endblock %}
+
+{% block header_extra %}
+  <span style="font-size: 12px; color: var(--text-muted); font-family: monospace; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+    {{ video_path }}
+  </span>
+  <span style="font-size: 12px; color: var(--text-muted); flex-shrink: 0;">
+    {{ chunks | length }} chunks · {{ speech_units | length }} units · {{ scenes | length }} scènes · {{ detected_lang }}
+  </span>
+  <a href="{{ reload_url }}"
+     class="btn danger" title="Recharger depuis la BDD">↺ Reload</a>
+  <a href="/" class="btn">← Retour</a>
+{% endblock %}
+
+{% block content %}
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    height: calc(100vh - 44px);
+  }
+
+  /* ── Chunks panel ── */
+  .chunks-panel {
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .stats-bar {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 16px; margin-bottom: 14px; font-size: 12px; color: var(--text-muted);
+  }
+  .stats-bar span strong { color: var(--text); }
+
+  /* ── Chunk card ── */
+  .chunk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .chunk-card:hover { background: var(--surface2); border-color: #444; }
+  .chunk-card.active {
+    border-left-color: var(--accent);
+    background: #141d2e;
+  }
+  .chunk-card.active .chunk-text { color: var(--text); }
+
+  .chunk-card[data-reason="TARGET_REACHED"] { border-left-color: #2e5a3f; }
+  .chunk-card[data-reason="TARGET_REACHED"].active { border-left-color: var(--success); background: #0f1f16; }
+  .chunk-card[data-reason="LONG_SILENCE"] { border-left-color: #2e3a5a; }
+  .chunk-card[data-reason="LONG_SILENCE"].active { border-left-color: #4f8ef7; background: #0f1525; }
+  .chunk-card[data-reason="MAX_EXCEEDED"] { border-left-color: #5a3e1a; }
+  .chunk-card[data-reason="MAX_EXCEEDED"].active { border-left-color: var(--warning); background: #1f180a; }
+  .chunk-card[data-reason="HARD_MAX"] { border-left-color: #5a2020; }
+  .chunk-card[data-reason="HARD_MAX"].active { border-left-color: #f74f4f; background: #1f0a0a; }
+  .chunk-card[data-reason="FORCED_CUT"] { border-left-color: #5a1a2e; }
+  .chunk-card[data-reason="FORCED_CUT"].active { border-left-color: #f74f8e; background: #1f0a14; }
+
+  .chunk-header {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .chunk-idx { font-size: 12px; font-weight: 700; color: var(--text-muted); min-width: 28px; }
+  .chunk-time { font-size: 12px; font-family: monospace; color: var(--text); }
+  .chunk-dur { font-size: 11px; color: var(--text-muted); }
+
+  .badge {
+    display: inline-block; padding: 1px 7px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge-END_OF_INPUT   { background: #1a2a1a; color: #6abf6a; }
+  .badge-TARGET_REACHED { background: #1a3327; color: #4caf78; }
+  .badge-LONG_SILENCE    { background: #1a2540; color: #4f8ef7; }
+  .badge-MAX_EXCEEDED   { background: #332211; color: #f79a4f; }
+  .badge-HARD_MAX       { background: #2a1010; color: #f74f4f; }
+  .badge-FORCED_CUT     { background: #2a1020; color: #f74f8e; }
+
+  .chunk-meta {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 8px;
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .chunk-meta .scenes-list { font-family: monospace; }
+
+  .chunk-text {
+    font-size: 13px; line-height: 1.6; color: #aaa;
+    word-break: break-word;
+  }
+
+  /* ── Video panel ── */
+  .video-panel {
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex; flex-direction: column;
+    position: sticky; top: 44px; height: calc(100vh - 44px);
+    overflow-y: auto;
+  }
+
+  .video-wrap {
+    background: #000;
+    flex-shrink: 0;
+  }
+  .video-wrap video {
+    width: 100%;
+    display: block;
+    max-height: 220px;
+    object-fit: contain;
+  }
+
+  .video-info {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .video-info .current-chunk {
+    font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 4px;
+  }
+  .video-info .current-text {
+    font-size: 12px; line-height: 1.5; color: var(--text-muted);
+    max-height: 80px; overflow-y: auto;
+  }
+
+  .video-stats {
+    padding: 12px 14px; font-size: 11px; color: var(--text-muted);
+    line-height: 1.8; flex: 1;
+  }
+  .video-stats dt { color: #666; display: inline; }
+  .video-stats dd { display: inline; color: var(--text); margin-left: 4px; }
+  .video-stats .row { display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 4px 0; }
+  .video-stats .row:last-child { border-bottom: none; }
+</style>
+
+<div class="layout">
+
+  <!-- ── Chunks list ── -->
+  <div class="chunks-panel">
+
+    <div class="stats-bar">
+      <span><strong>{{ chunks | length }}</strong> chunks</span>
+      <span><strong>{{ speech_units | length }}</strong> speech units</span>
+      <span><strong>{{ scenes | length }}</strong> scènes</span>
+      <span>Langue : <strong>{{ detected_lang }}</strong></span>
+      <span>Modèle : <strong>{{ model_name }}</strong></span>
+      {% if metadata %}
+      <span>Durée : <strong>{{ (metadata.duration_seconds | round(1)) }}s</strong></span>
+      <span>FPS : <strong>{{ metadata.fps }}</strong></span>
+      {% endif %}
+      <span style="margin-left: auto; color: #555;">{{ processed_at }}</span>
+    </div>
+
+    {% for chunk in chunks %}
+    <div class="chunk-card"
+         data-index="{{ chunk.chunk_index }}"
+         data-start="{{ chunk.start_ms }}"
+         data-end="{{ chunk.end_ms }}"
+         data-reason="{{ chunk.split_reason }}"
+         data-text="{{ chunk.text | e }}"
+         onclick="selectChunk(this)">
+
+      <div class="chunk-header">
+        <span class="chunk-idx">#{{ chunk.chunk_index }}</span>
+        <span class="chunk-time">{{ chunk.start_ms | ms_to_time }} → {{ chunk.end_ms | ms_to_time }}</span>
+        <span class="chunk-dur">({{ ((chunk.end_ms - chunk.start_ms) / 1000) | round(1) }}s)</span>
+        <span class="badge badge-{{ chunk.split_reason }}">{{ chunk.split_reason }}</span>
+      </div>
+
+      <div class="chunk-meta">
+        <span>{{ chunk.word_count }} mots</span>
+        <span>{{ chunk.char_count }} chars</span>
+        <span>{{ chunk.speech_unit_count }} unit{{ 's' if chunk.speech_unit_count > 1 }}</span>
+        <span class="scenes-list">Scènes : [{{ chunk.source_scene_indices | join(', ') }}]</span>
+      </div>
+
+      <div class="chunk-text">{{ chunk.text }}</div>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+      Aucun chunk produit.
+    </div>
+    {% endfor %}
+
+  </div>
+
+  <!-- ── Video panel ── -->
+  <div class="video-panel">
+
+    <div class="video-wrap">
+      <video id="player"
+             src="/media/{{ cache_key }}/video"
+             controls
+             preload="metadata">
+        Votre navigateur ne supporte pas la lecture vidéo.
+      </video>
+    </div>
+
+    <div class="video-info">
+      <div class="current-chunk" id="chunk-indicator">Cliquez sur un chunk pour naviguer</div>
+      <div class="current-text" id="chunk-preview"></div>
+    </div>
+
+    <div class="video-stats">
+      {% if metadata %}
+      <div class="row"><dt>Résolution</dt><dd>{{ metadata.width }}×{{ metadata.height }}</dd></div>
+      <div class="row"><dt>FPS</dt><dd>{{ metadata.fps }}</dd></div>
+      <div class="row"><dt>Durée</dt><dd>{{ metadata.duration_seconds | round(2) }}s</dd></div>
+      <div class="row"><dt>Frames</dt><dd>{{ metadata.frame_count }}</dd></div>
+      {% endif %}
+      <div class="row"><dt>Chunks</dt><dd>{{ chunks | length }}</dd></div>
+      <div class="row"><dt>Mots / chunk (moy.)</dt>
+        <dd>{% if chunks %}{{ ((chunks | sum(attribute='word_count')) / (chunks | length)) | round(1) }}{% endif %}</dd>
+      </div>
+      <div class="row"><dt>Chars / chunk (moy.)</dt>
+        <dd>{% if chunks %}{{ ((chunks | sum(attribute='char_count')) / (chunks | length)) | round(0) | int }}{% endif %}</dd>
+      </div>
+      <div class="row"><dt>TARGET_REACHED</dt><dd>{{ chunks | selectattr('split_reason', 'eq', 'TARGET_REACHED') | list | length }}</dd></div>
+      <div class="row"><dt>LONG_SILENCE</dt><dd>{{ chunks | selectattr('split_reason', 'eq', 'LONG_SILENCE') | list | length }}</dd></div>
+      <div class="row"><dt>END_OF_INPUT</dt><dd>{{ chunks | selectattr('split_reason', 'eq', 'END_OF_INPUT') | list | length }}</dd></div>
+      <div class="row"><dt>MAX_EXCEEDED</dt><dd>{{ chunks | selectattr('split_reason', 'eq', 'MAX_EXCEEDED') | list | length }}</dd></div>
+      <div class="row"><dt>HARD_MAX</dt><dd>{{ chunks | selectattr('split_reason', 'eq', 'HARD_MAX') | list | length }}</dd></div>
+      <div class="row"><dt>FORCED_CUT</dt><dd>{{ chunks | selectattr('split_reason', 'eq', 'FORCED_CUT') | list | length }}</dd></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const player = document.getElementById('player');
+  const indicator = document.getElementById('chunk-indicator');
+  const preview = document.getElementById('chunk-preview');
+
+  // Index des chunks pour la navigation par temps
+  const chunkCards = Array.from(document.querySelectorAll('.chunk-card'));
+  const chunkRanges = chunkCards.map(card => ({
+    card,
+    startS: parseInt(card.dataset.start) / 1000,
+    endS:   parseInt(card.dataset.end)   / 1000,
+    idx:    card.dataset.index,
+    text:   card.dataset.text,
+    startMs: parseInt(card.dataset.start),
+    endMs:   parseInt(card.dataset.end),
+  }));
+
+  let stopAt = null;
+  let activeCard = null;
+  // Évite de scroller vers le chunk si c'est l'utilisateur qui clique
+  let userClicking = false;
+
+  function activateCard(entry, scrollIntoView) {
+    if (activeCard === entry.card) return;
+    if (activeCard) activeCard.classList.remove('active');
+    entry.card.classList.add('active');
+    activeCard = entry.card;
+
+    indicator.textContent = `Chunk #${entry.idx} — ${formatMs(entry.startMs)} → ${formatMs(entry.endMs)}`;
+    preview.textContent = entry.text;
+
+    if (scrollIntoView) {
+      entry.card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function selectChunk(card) {
+    const entry = chunkRanges.find(e => e.card === card);
+    if (!entry) return;
+
+    userClicking = true;
+    activateCard(entry, false);
+
+    player.currentTime = entry.startS;
+    stopAt = entry.endS;
+    player.play();
+
+    // Réactive le suivi auto après le seek
+    setTimeout(() => { userClicking = false; }, 300);
+  }
+
+  player.addEventListener('timeupdate', () => {
+    const t = player.currentTime;
+
+    if (stopAt !== null && t >= stopAt) {
+      player.pause();
+      stopAt = null;
+    }
+
+    // Suivi auto : met en évidence le chunk correspondant à la position courante
+    if (!userClicking) {
+      const entry = chunkRanges.find(e => t >= e.startS && t < e.endS)
+                 ?? (t >= chunkRanges[chunkRanges.length - 1]?.startS ? chunkRanges[chunkRanges.length - 1] : null);
+      if (entry) activateCard(entry, true);
+    }
+  });
+
+  function formatMs(ms) {
+    const s = ms / 1000;
+    const m = Math.floor(s / 60);
+    const rem = (s % 60).toFixed(1).padStart(4, '0');
+    return `${String(m).padStart(2, '0')}:${rem}`;
+  }
+</script>
+{% endblock %}

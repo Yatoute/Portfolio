@@ -1,0 +1,14 @@
+{
+  "gcp-fct-scrapper-facebook": {
+    "cf_url": "https://scrapper-facebook-000000000000.europe-west1.run.app",
+    "default_queue": "scrapper-facebook"
+  },
+  "gcp-fct-scrapper-linkedin": {
+    "cf_url": "https://scrapper-linkedin-v2-000000000000.europe-west1.run.app",
+    "default_queue": "scrapper-linkedin-v2"
+  },
+  "gcp-fct-scrapper-instagram-v2": {
+    "cf_url": "https://scrapper-instagram-v2-000000000000.europe-west1.run.app",
+    "default_queue": "scrapper-instagram"
+  }
+}

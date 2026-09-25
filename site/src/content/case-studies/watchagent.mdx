@@ -1,0 +1,61 @@
+## Pourquoi ce projet
+
+Faire tourner un modèle de vision-langage sur chaque frame d'un flux vidéo
+est à la fois inutile (des frames consécutives sont quasi identiques) et
+coûteux. Ce projet explore une architecture où la vision par ordinateur
+classique fait le tri avant qu'un VLM ne soit sollicité — un choix de
+conception délibéré, pas une contrainte subie.
+
+## Architecture
+
+```
+Flux RTSP
+   │
+   ▼
+Sous-échantillonnage temporel (30fps → 5fps analysées)
+   │
+   ▼
+Segmentation de scènes — vision classique, pas de deep learning
+(distance de Bhattacharyya sur histogrammes HSV)
+   │
+   ▼
+Sélection de keyframes par scène (non redondantes)
+   │
+   ▼
+Description par VLM local (Qwen2.5-VL 3B via Ollama)
+avec mémoire conversationnelle inter-scènes
+```
+
+La segmentation compare chaque frame à la précédente et à une frame de
+référence de la scène en cours, avec des seuils ajustables pour décider
+qu'une nouvelle scène a commencé — entièrement en CPU, sans réseau de
+neurones. Ce n'est qu'une fois les keyframes représentatives sélectionnées
+que le VLM est appelé, par lots (jusqu'à 4 images par appel, contrainte du
+fusionneur de patchs visuels de Qwen2.5-VL).
+
+**Mémoire inter-scènes** : les descriptions textuelles (pas les images) des
+3 dernières scènes sont réinjectées comme tours de conversation précédents
+avant de décrire la scène courante — assez pour que le modèle puisse dire
+"c'est la même personne vue deux scènes plus tôt" sans repayer le coût de
+renvoyer les images.
+
+## État actuel
+
+Le pipeline tourne bout-en-bout (validé sur un flux RTSP simulé via FFmpeg
++ MediaMTX), avec des exécutions réelles capturées : scènes segmentées,
+keyframes sauvegardées, descriptions générées par le VLM. Sur CPU local,
+chaque appel VLM prend de l'ordre de 80 secondes — une contrainte réelle de
+latence à garder en tête pour tout usage temps réel.
+
+## Prochaines étapes
+
+Détection d'objets/personnes dédiée, moteur de règles pour décider quand
+alerter, stockage persistant des événements et API — les briques naturelles
+pour passer du pipeline de description à un système d'alerte complet. Le
+jeu de données UCF-Crime (anomalies vidéo), déjà téléchargé, est la piste
+retenue pour une étape de classification d'anomalies.
+
+## Stack technique
+
+OpenCV · Ollama · Qwen2.5-VL 3B (local) · FFmpeg · MediaMTX (simulation
+RTSP)

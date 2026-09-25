@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 560px; margin: 80px auto; padding: 0 20px; text-align: center;">
+  <div style="font-size: 52px; margin-bottom: 18px;">🎙️</div>
+  <h2 style="font-size: 22px; font-weight: 600; margin-bottom: 8px;">Transcript Chunks Visualizer</h2>
+  <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 32px; line-height: 1.6;">
+    Visualise les chunks de transcription stockés en base de données.<br>
+    Renseignez un <strong>doc_id</strong> ou une <strong>URL GCS + importation_id</strong>.
+  </p>
+
+  <form method="GET" action="/chunks" style="display: flex; flex-direction: column; gap: 10px; text-align: left;">
+
+    <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">doc_id</label>
+    <input type="text" name="doc_id"
+           placeholder="51470753"
+           style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                  padding: 10px 14px; color: var(--text); font-size: 13px; font-family: monospace;
+                  outline: none; width: 100%;">
+
+    <div style="text-align: center; font-size: 12px; color: var(--text-muted); margin: 2px 0;">— ou —</div>
+
+    <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">URL GCS (blob_url)</label>
+    <input type="text" name="url"
+           placeholder="gs://bucket/path/to/video.mp4"
+           style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                  padding: 10px 14px; color: var(--text); font-size: 13px; font-family: monospace;
+                  outline: none; width: 100%;">
+
+    <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px;">importation_id</label>
+    <input type="text" name="importation_id"
+           placeholder="1070"
+           style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                  padding: 10px 14px; color: var(--text); font-size: 13px; font-family: monospace;
+                  outline: none; width: 100%;">
+
+    <button type="submit" class="btn accent" style="margin-top: 8px; padding: 11px 20px; font-size: 14px; justify-content: center;">
+      → Visualiser
+    </button>
+  </form>
+
+  <p style="margin-top: 20px; font-size: 11px; color: var(--text-muted);">
+    Les vidéos sont mises en cache dans <code style="color: #666;">/tmp/chunks_app/</code> pendant 30 min.
+  </p>
+</div>
+{% endblock %}

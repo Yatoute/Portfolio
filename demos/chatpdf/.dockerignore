@@ -1,0 +1,15 @@
+.env
+.env.local
+.git
+.gitignore
+__pycache__/
+*.pyc
+.venv/
+storage/
+examples/sources/
+examples/outputs/
+examples/chatpdf.ipynb
+examples/data-gym-cache/
+doc/
+*.md
+!README.md

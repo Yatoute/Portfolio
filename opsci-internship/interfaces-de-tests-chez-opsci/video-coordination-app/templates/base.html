@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Reprises vidéo{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0d;
+      --surface: #1a1a1a;
+      --surface2: #222;
+      --border: #2e2e2e;
+      --text: #e0e0e0;
+      --text-muted: #777;
+      --accent: #4f8ef7;
+      --success: #4caf78;
+      --warning: #e8a838;
+    }
+
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .header-logo { font-size: 18px; flex-shrink: 0; }
+
+    /* ── Formulaire ── */
+    .search-form { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; flex-wrap: wrap; }
+
+    .group-primary {
+      display: flex; align-items: stretch;
+      border: 1px solid var(--border); border-radius: 7px; overflow: hidden;
+    }
+    .group-primary label {
+      background: var(--surface2); border-right: 1px solid var(--border);
+      color: var(--text-muted); font-size: 11px; padding: 7px 10px;
+      display: flex; align-items: center; white-space: nowrap; flex-shrink: 0;
+    }
+    .group-primary input {
+      background: var(--surface2); border: none; outline: none;
+      color: var(--text); font-size: 12px; font-family: monospace;
+      padding: 7px 10px; width: 120px;
+    }
+
+    input::placeholder { color: #444; }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+    /* ── Boutons ── */
+    .btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 7px 14px; border-radius: 6px;
+      cursor: pointer; font-size: 12px; white-space: nowrap;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+      flex-shrink: 0;
+    }
+    .btn:hover { background: #2e2e2e; border-color: #555; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Main ── */
+    main { padding: 24px 20px; max-width: 1600px; margin: 0 auto; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  </style>
+</head>
+<body>
+<header>
+  <span class="header-logo">🎞️</span>
+
+  <form class="search-form" method="GET" action="/reprises">
+
+    <!-- Analyse ID -->
+    <div class="group-primary">
+      <label>Analyse ID</label>
+      <input type="number" name="analyse_id"
+             placeholder="509"
+             value="{{ analyse_id or '' }}">
+    </div>
+
+    <button type="submit" class="btn primary">Charger</button>
+  </form>
+</header>
+
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

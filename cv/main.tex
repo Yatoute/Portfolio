@@ -1,0 +1,256 @@
+\documentclass[9pt,letterpaper]{extarticle}
+
+% -------------------- Packages & Layout --------------------
+\usepackage[
+  ignoreheadfoot,
+  top=1.0cm,
+  bottom=1.0cm,
+  left=1.2cm,
+  right=1.2cm,
+  footskip=0.5cm
+]{geometry}
+
+\usepackage{titlesec}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage[dvipsnames]{xcolor}
+\definecolor{primaryColor}{RGB}{0,79,144}
+\usepackage{enumitem}
+\usepackage{fontawesome5}
+\usepackage{amsmath}
+\usepackage[
+  pdftitle={CV de MINTOAMA},
+  pdfauthor={Yatoute MINTOAMA},
+  pdfcreator={LaTeX},
+  colorlinks=true,
+  urlcolor=primaryColor
+]{hyperref}
+\usepackage[pscoord]{eso-pic}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{ifthen}
+\usepackage{needspace}
+\usepackage{iftex}
+
+\ifPDFTeX
+  \input{glyphtounicode}
+  \pdfgentounicode=1
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+% -------------------- Global spacing tweaks --------------------
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0cm}
+
+\titleformat{\section}
+  {\needspace{2\baselineskip}\bfseries\large\color{blue}}
+  {}
+  {0pt}
+  {}
+  [\vspace{0.2pt}\titlerule]
+\titlespacing{\section}{-1pt}{0.15cm}{0.10cm}
+
+\setlist[itemize]{leftmargin=0.8em,itemsep=0.8pt,topsep=0.8pt,parsep=0pt}
+\renewcommand\labelitemi{$\circ$}
+
+\newenvironment{highlights}{
+  \begin{itemize}
+}{
+  \end{itemize}
+}
+
+\newenvironment{spaciouslist}{
+  \begin{itemize}[
+    leftmargin=0.8em,
+    itemsep=4pt,
+    topsep=1pt,
+    parsep=0pt,
+    partopsep=0pt
+  ]
+}{
+  \end{itemize}
+}
+
+\newenvironment{onecolentry}{
+  \begin{adjustwidth}{0.15cm}{0.15cm}
+}{
+  \end{adjustwidth}
+}
+
+\newenvironment{twocolentry}[2][]{
+  \begin{onecolentry}
+  \def\secondColumn{#2}
+  \setcolumnwidth{\fill, 4.1cm}
+  \begin{paracol}{2}
+}{
+  \switchcolumn \raggedleft \secondColumn
+  \end{paracol}
+  \end{onecolentry}
+}
+
+\newenvironment{header}{
+  \setlength{\topsep}{0pt}\par\kern\topsep\centering\linespread{1.1}
+}{
+  \par\kern\topsep
+}
+
+\let\hrefWithoutArrow\href
+\renewcommand{\href}[2]{\hrefWithoutArrow{#1}{\ifthenelse{\equal{#2}{}}{ }{#2 }\raisebox{.15ex}{\footnotesize \faExternalLink*}}}
+
+\thispagestyle{empty}
+\newcommand{\placelastupdatedtext}{}
+
+% -------------------- Document --------------------
+\begin{document}
+
+\newcommand{\AND}{\unskip \cleaders\copy\ANDbox\hskip\wd\ANDbox \ignorespaces}
+\newsavebox\ANDbox
+\sbox\ANDbox{}
+
+\placelastupdatedtext
+
+% ========================= HEADER =========================
+\begin{header}
+  \textbf{\fontsize{21pt}{21pt}\selectfont Yatoute MINTOAMA}
+
+  \vspace{0.20cm}
+
+  {\fontsize{13pt}{13pt}\selectfont\textbf{AI Engineer --- LLM Fine-tuning, MLOps \& Agents IA}}
+
+  \vspace{0.20cm}
+
+  \mbox{\hrefWithoutArrow{mailto:mintoamayatoute@gmail.com}{\color{black}{\footnotesize\faEnvelope[regular]}\hspace*{0.12cm}mintoamayatoute@gmail.com}}%
+  \kern 0.22cm%
+  \AND%
+  \kern 0.22cm%
+  \mbox{\hrefWithoutArrow{tel:+33-07-73-14-82-42}{\color{black}{\footnotesize\faPhone*}\hspace*{0.12cm}+33 7 73 14 82 42}}%
+  \kern 0.22cm%
+  \AND%
+  \kern 0.22cm%
+  \mbox{\hrefWithoutArrow{https://www.linkedin.com/in/yatoute/}{\color{black}{\footnotesize\faLinkedinIn}\hspace*{0.12cm}linkedin.com/in/yatoute}}%
+  \kern 0.22cm%
+  \AND%
+  \kern 0.22cm%
+  \mbox{\hrefWithoutArrow{https://github.com/Yatoute}{\color{black}{\footnotesize\faGithub}\hspace*{0.12cm}github.com/Yatoute}}%
+  \kern 0.22cm%
+  \AND%
+  \kern 0.22cm%
+  \mbox{\hrefWithoutArrow{https://yatoute.vercel.app}{\color{black}{\footnotesize\faGlobe}\hspace*{0.12cm}yatoute.vercel.app}}%
+\end{header}
+
+\vspace{0.06cm}
+
+% ========================= PROFILE =========================
+\section{PROFIL}
+
+\begin{onecolentry}
+AI Engineer diplômé en 2026 (ENSAI/ENSAE), spécialisé dans le fine-tuning et le déploiement de modèles open-weight en production, ainsi que la conception d’agents LLM autonomes. En stage chez \textbf{Opsci AI}, j’ai conçu un moteur de traduction en process (CTranslate2) qui a réduit de \textbf{90\% les coûts} d’infrastructure GCP et multiplié la vitesse par \textbf{77}, un pipeline de video mining (scènes, keyframes CLIP, transcription WhisperX) traitant des milliers de vidéos par heure, et un agent de monitoring autonome qui diagnostique et corrige des Cloud Functions de scraping en production. En parallèle, je fine-tune des modèles open-source (GPT-2 from scratch, QLoRA sur Qwen via LLaMA-Factory) et je conçois des agents orchestrés avec des LLM propriétaires (LangGraph). Je recherche un poste d’AI Engineer alliant ingénierie modèle et systèmes de production.
+\end{onecolentry}
+
+\vspace{0.10cm}
+% ========================= EXPERIENCE =========================
+\section{EXPÉRIENCE}
+
+\begin{twocolentry}{
+\textit{Paris, France} \\
+\textit{Mars 2026 – Sept 2026}}
+  \textbf{AI Engineer (stage)} \\
+  \textit{Opsci AI}
+\end{twocolentry}
+\vspace{0.04cm}
+\begin{onecolentry}
+  \begin{highlights}
+    \item \textbf{Moteur de traduction en process} (CTranslate2/Argos, GPU) remplaçant un appel externe : \textbf{-90\% de coût} d’infrastructure GCP (400€$\rightarrow$40€/mois) et \textbf{$\times$77} plus rapide, via cache LRU des modèles, tuning de la taille de batch GPU et un mécanisme de fusion de requêtes concurrentes développé from scratch.
+    \item \textbf{Pipeline de video mining} sur GCP (Cloud Functions) : détection de scènes (PySceneDetect), sélection de keyframes par embeddings CLIP (OpenCLIP, Farthest Point Sampling), transcription audio (WhisperX) synchronisée par scène.
+    \item \textbf{Agent de monitoring} (LLM agent) pour le diagnostic et la correction autonome des Cloud Functions de scraping en production : détection de dérive de schéma, résolution de challenges anti-bot, reconnexion de sessions, gestion dynamique de la capacité des files de traitement.
+  \end{highlights}
+\end{onecolentry}
+
+\vspace{0.15cm}
+
+\begin{twocolentry}{
+\textit{Paris, France} \\
+\textit{Juin 2025 – Sept 2025}}
+  \textbf{Stagiaire Data Engineer / NLP} \\
+  \textit{Opsci AI}
+\end{twocolentry}
+\vspace{0.04cm}
+\begin{onecolentry}
+  \begin{highlights}
+    \item Conception de pipelines distribués sur GCP (Cloud Functions, Cloud Tasks, Cloud SQL) pour la collecte et l’analyse de données sociales à grande échelle.
+    \item Analyse de discours géopolitiques via NLP : \textit{Cartographie thématique des discours sur la reconnaissance de l’État palestinien}.
+  \end{highlights}
+\end{onecolentry}
+
+\vspace{0.10cm}
+% ========================= EDUCATION =========================
+\section{FORMATION}
+
+\begin{twocolentry}{
+\textit{Rennes, France} \\
+\textit{2024–2026}}
+  \textbf{ENSAI – École Nationale de la Statistique et de l’Analyse de l’Information} \\
+  \textit{Cursus Data Science \& Engineering, spécialisation Data science et Data Engineering}
+\end{twocolentry}
+
+\vspace{0.10cm}
+
+\begin{twocolentry}{
+\textit{Dakar, Sénégal} \\
+\textit{2020–2024}}
+  \textbf{ENSAE – École Nationale de la Statistique et de l’Analyse Économique} \\
+  \textit{Diplôme d’ingénieur en Statistiques et Économie}
+\end{twocolentry}
+
+\vspace{0.10cm}
+% ========================= PROJECTS =========================
+\section{PROJETS}
+\begin{onecolentry}
+  \begin{highlights}
+  
+ \item \textbf{GPT-Light – Implémentation complète d’un modèle GPT \& fine-tuning des poids officiels GPT-2 (OpenAI)} - \href{https://github.com/Yatoute/gpt-light}{\faGithub~github.com/Yatoute/gpt-light}.
+\begin{highlights}
+  \item Développement d’un \textbf{GPT de type GPT-2} entièrement from scratch en PyTorch : Embeddings, Positional encodings, Multi-head Causal Attention, Feedforward Neural Network.
+  \item Intégration des \textbf{poids officiels GPT-2 (OpenAI)} avec \textbf{weight tying} : partage des poids entre la couche d’embedding et la tête de sortie (logits), conforme à l’architecture GPT-2 et optimisant la capacité du modèle.
+  \item Fine-tuning supervisé sur une \textbf{tâche de classification de spam} 
+  
+\end{highlights}
+
+\vspace{0.10cm}
+
+    \item \textbf{ChatPDF – Agent RAG agentique avec navigation de documents} \\
+    \begin{highlights}
+      \item Agent \textbf{LangGraph} avec outils (recherche sémantique FAISS, navigation entre chunks, lecture par page) et résumé automatique de conversation pour la gestion du contexte.
+      \item OCR pour documents scannés, providers de modèles interchangeables (OpenAI / Ollama local).
+    \end{highlights}
+
+\vspace{0.10cm}
+
+    \item \textit{Autres projets (fine-tuning QLoRA, agent de vision par caméra) : voir \href{https://yatoute.vercel.app}{le portfolio}.}
+
+  \end{highlights}
+\end{onecolentry}
+
+\vspace{0.10cm}
+% ========================= COMPÉTENCES =========================
+\section{COMPÉTENCES}
+\begin{onecolentry}
+\begin{spaciouslist}
+    \item \textbf{Programmation \& Framework: } Python, SQL, Java, scikit-learn, PyTorch
+    \item \textbf{LLM Engineering :} Transformers, QLoRA/LoRA fine-tuning, LLaMA-Factory, LangGraph, agents LLM autonomes, CTranslate2, WhisperX, OpenCLIP, Ollama (VLM local), FAISS
+    \item \textbf{NLP classique :} BERT, UMAP, HDBSCAN, NER, Topic modeling
+    \item \textbf{Cloud \& Infra :} Google Cloud Platform, AWS, Terraform (HCL \& CDKTF)
+    \item \textbf{DevOps :} Docker, Kubernetes, GitHub Actions
+    \item \textbf{Soft Skills :} Autonomie, rigueur, rédaction technique
+    \item \textbf{Langues :} Français (natif), Anglais (intermédiaire)
+\end{spaciouslist}
+\end{onecolentry}
+
+\end{document}
