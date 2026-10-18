@@ -1,0 +1,86 @@
+> **Testez le détecteur en direct** — uploadez une courte vidéo sur la [démo de détection vidéo](/demos/detection-videos) pour voir le score de probabilité "généré par IA" prédit en temps réel.
+
+## Le problème : étendre un détecteur d'images à la vidéo
+
+Le [détecteur d'images](/projects/detection-images-ia) ci-dessus fonctionne
+frame par frame — appliqué naïvement à la vidéo (16 frames échantillonnées,
+scores moyennés en un score unique), il plafonnait à **44,7% de rappel** sur
+une vérité terrain externe (disclosure IA native de TikTok, ~3 600 vidéos
+confirmées). Diagnostic des faux négatifs : 74,3% des vidéos manquées
+avaient pourtant au moins une frame individuelle au-dessus du seuil de
+décision — le signal existe, mais la moyenne le dilue. Remplacer la moyenne
+par des règles de comptage ou une agrégation apprise sur les scores déplace
+le compromis rappel/précision sans jamais dépasser un plafond empirique
+d'environ 70% de rappel, quelle que soit la règle testée.
+
+## Architecture : une tête d'attention temporelle
+
+Plutôt que d'agréger des *scores* par frame, le modèle agrège la
+*représentation complète* de chaque frame — même backbone ViT-Small que le
+détecteur d'images, prolongé par un petit encodeur Transformer qui apprend
+lui-même comment pondérer les 16 frames :
+
+```
+Vidéo → 16 frames échantillonnées (30 premières secondes)
+   │
+   ▼
+ViT-Small partagé (poids identiques par frame, même modèle que pour l'image)
+   │
+   ▼
+16 embeddings [CLS] (384 dim.) + jeton [VIDEO-CLS] appris + position
+   │
+   ▼
+Tête temporelle : encodeur Transformer (2 blocs, pré-normalisation, 4 têtes)
+   │
+   ▼
+Tête linéaire + sigmoïde → p(IA) ∈ [0,1]
+```
+
+Même discipline d'entraînement en deux étages (**LP-FT**) que pour l'image :
+étage 1 avec le backbone entièrement gelé (embeddings extraits une seule
+fois et mis en cache, seule la tête temporelle est entraînée), étage 2 avec
+adaptation **LoRA** des mêmes projections (Wq/Wv, 8 derniers blocs sur 12,
+r=8, α=16) entraînée conjointement — la tête temporelle de l'étage 2 reprend
+les poids déjà entraînés à l'étage 1, jamais une initialisation aléatoire.
+
+## Passage à l'échelle : 50 123 vidéos
+
+Entraîné sur un échantillon ~14× plus grand que les itérations précédentes,
+avec intégration dès le départ de contenu à charge narrative (géopolitique,
+élections, migration, santé, climat) aux côtés d'un échantillon aléatoire —
+split stratifié par (source × label) pour préserver la composition de
+chaque sous-ensemble.
+
+<div className="not-prose grid grid-cols-1 gap-3 sm:grid-cols-3 my-6">
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">44.7% → 84.8%</div>
+    <div className="text-xs text-[var(--muted)]">rappel, moyenne simple vs tête temporelle</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">0.939</div>
+    <div className="text-xs text-[var(--muted)]">AUC sur 7 520 vidéos de test</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">8.3% ≈ 8.5%</div>
+    <div className="text-xs text-[var(--muted)]">FPR narratif vs aléatoire (écart résorbé)</div>
+  </div>
+</div>
+
+Le point le plus significatif n'est pas visible dans les métriques globales :
+dans une itération antérieure à plus petite échelle, le taux de faux
+positifs sur le contenu à charge narrative était plus du double de celui sur
+l'échantillon aléatoire (20,3% contre 9,0%). À l'échelle de 50k vidéos avec
+un split stratifié par source, cet écart disparaît — le modèle généralise au
+contenu narratif sans sur-coût de faux positifs mesurable.
+
+## Infrastructure d'entraînement
+
+Pipeline de bout en bout (téléchargement du cache vidéo, extraction
+d'embeddings, entraînement des deux étages, évaluation finale) exécuté sur
+une instance GPU unique (Lambda Cloud, A10) pour limiter les coûts de
+démarrage/arrêt — environ 50$ pour l'ensemble du run.
+
+## Stack technique
+
+ViT-Small (Community Forensics) · Transformer (tête temporelle, PyTorch) ·
+PEFT/LoRA · Lambda Cloud (A10)

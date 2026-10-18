@@ -18,7 +18,7 @@ export default function ProjectsPage() {
           <span className="text-gradient">Projets</span>
         </h1>
         <p className="max-w-2xl text-lg text-muted">
-          Trois études de cas issues d&apos;un stage en production (Opsci AI), et quatre
+          Cinq études de cas issues d&apos;un stage en production (Opsci AI), et six
           projets personnels de fine-tuning et d&apos;ingénierie de modèles.
         </p>
       </div>

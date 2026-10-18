@@ -4,12 +4,12 @@ import { HeroMetric } from "@/components/HeroMetric";
 import { projects } from "@/lib/projects";
 
 const modelLevelSkills = [
+  "ViT fine-tuning (LoRA, LP-FT) — détection de contenu généré par IA",
+  "Whisper / NLLB — ASR et traduction en contexte bas-ressource",
   "CTranslate2 — optimisation d'inférence GPU",
   "QLoRA / LoRA fine-tuning (LLaMA-Factory)",
   "GPT-2 from scratch + chargement de checkpoints officiels",
-  "WhisperX — transcription & alignement",
   "OpenCLIP — embeddings & sélection de keyframes",
-  "Ollama — déploiement de VLM en local",
 ];
 
 const systemsSkills = [
@@ -38,13 +38,16 @@ export default function Home() {
           production.
         </h1>
         <p className="max-w-2xl text-lg leading-relaxed text-muted sm:text-xl">
-          En stage chez Opsci AI, j&apos;ai construit un moteur de traduction qui a
-          réduit les coûts d&apos;infrastructure de 90% et multiplié la vitesse par 77,
-          un pipeline de video mining traitant des milliers de vidéos par heure, et
-          un agent de monitoring autonome qui diagnostique et corrige des Cloud
-          Functions de scraping en production. En parallèle, je fine-tune des
-          modèles open-source (GPT-2, Qwen) et je conçois des agents orchestrés
-          avec des LLM propriétaires (LangGraph) sur des cas d&apos;usage concrets.
+          En stage chez Opsci AI, j&apos;ai diagnostiqué les angles morts d&apos;un
+          détecteur d&apos;images générées par IA puis corrigé par fine-tuning LoRA
+          (rappel ×6, déployé en production), avant d&apos;étendre l&apos;architecture à la
+          vidéo avec une tête d&apos;attention temporelle entraînée sur 50&nbsp;000
+          vidéos. En parallèle, j&apos;ai fine-tuné Whisper et NLLB pour trois langues
+          togolaises sans ressources numériques (éwé, kabiyè, moba) — reconnaissance
+          vocale et traduction. J&apos;ai aussi construit un moteur de traduction
+          interne (-90% de coût, ×77 plus rapide), un pipeline de video mining à
+          grande échelle, et un agent de monitoring autonome pour des Cloud
+          Functions de scraping en production.
         </p>
         <div className="flex flex-wrap gap-3 pt-2">
           <Link
@@ -64,28 +67,28 @@ export default function Home() {
 
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <HeroMetric
+            value="89.8%"
+            label="rappel détection images IA (vs 14.4%)"
+            projectSlug="detection-images-ia"
+            projectName="Détection d'images IA"
+          />
+          <HeroMetric
+            value="84.8%"
+            label="rappel détection vidéos IA (vs 44.7%)"
+            projectSlug="detection-videos-ia"
+            projectName="Détection de vidéos IA"
+          />
+          <HeroMetric
+            value="8.9%"
+            label="WER éwé (Whisper fine-tuné)"
+            projectSlug="asr-langues-togolaises"
+            projectName="ASR langues togolaises"
+          />
+          <HeroMetric
             value="-90%"
-            label="de coût infra"
+            label="de coût infra (traduction)"
             projectSlug="translation-cost-optimization"
             projectName="Moteur de traduction"
-          />
-          <HeroMetric
-            value="×77"
-            label="plus rapide par doc"
-            projectSlug="translation-cost-optimization"
-            projectName="Moteur de traduction"
-          />
-          <HeroMetric
-            value="96.96%"
-            label="accuracy spam"
-            projectSlug="gptlight"
-            projectName="GPT-Light"
-          />
-          <HeroMetric
-            value="~1000"
-            label="vidéos/h traitées"
-            projectSlug="video-mining-pipeline"
-            projectName="Video mining"
           />
         </div>
       </section>

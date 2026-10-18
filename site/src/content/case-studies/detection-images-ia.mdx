@@ -1,0 +1,87 @@
+> **Testez le détecteur en direct** — uploadez une image sur la [démo de détection](/demos/detection-images) pour voir le score de probabilité "généré par IA" prédit en temps réel.
+
+## Le problème
+
+Une plateforme de veille et d'analyse de contenu doit pouvoir dire si une image
+collectée sur les réseaux sociaux a été générée par IA — un signal de plus en
+plus central en contexte de désinformation. Les détecteurs académiques
+publiés se comportent bien sur leurs propres benchmarks, mais s'effondrent
+face à des générateurs apparus après leur entraînement, y compris les
+architectures les plus récentes. Un détecteur généraliste ne peut donc pas
+être déployé sans un diagnostic préalable de ses angles morts spécifiques au
+contexte d'usage visé.
+
+## Diagnostic empirique avant tout choix de modèle
+
+Le choix du modèle de base n'a pas été arbitraire : plusieurs détecteurs
+open source ont été comparés sur un petit échantillon de calibration
+interne, construit pour séparer nettement une ancre "humaine" (images
+antérieures à la généralisation des générateurs modernes, donc certainement
+authentiques) d'une ancre "IA" générée localement. Parmi les candidats — un
+classifieur linéaire sur représentation CLIP gelée, un détecteur fondé sur
+les relations entre pixels voisins, plusieurs ViT pré-entraînés — **Community
+Forensics** (ViT-Small, ~22M paramètres, entraîné de bout en bout sur 2,7M
+images et 4 803 générateurs distincts) s'est distingué par la séparation la
+plus nette entre les deux ancres.
+
+## Architecture : ViT-Small + adaptation LoRA
+
+```
+Image d'entrée
+   │
+   ▼
+ViT-Small (12 blocs, gelés en étage 1)
+   │  LayerNorm → attention multi-têtes → résiduel → LayerNorm → MLP → résiduel, ×12
+   ▼
+Extraction du jeton [CLS] (384 dim.)
+   │
+   ▼
+Tête linéaire + sigmoïde → p(IA) ∈ [0,1]
+```
+
+Entraînement en deux étages (**LP-FT**, Kumar et al. 2022) plutôt qu'un
+fine-tuning direct : un fine-tuning complet depuis une tête aléatoire déforme
+les caractéristiques pré-entraînées dans les seules directions couvertes par
+les données d'entraînement vues, ce qui dégrade spécifiquement la
+généralisation hors distribution — exactement ce qu'on cherche à préserver
+ici.
+
+- **Étage 1** — backbone entièrement gelé, seule la tête de classification
+  est entraînée.
+- **Étage 2** — adaptation **LoRA** des projections `Wq`/`Wv` des 8 derniers
+  blocs d'attention sur 12 (r=8, α=16), initialisée depuis la tête déjà
+  entraînée à l'étage 1 — jamais une tête aléatoire. **0,45% des paramètres**
+  du modèle sont entraînables (98 689 / 21 910 658).
+
+<div className="not-prose grid grid-cols-1 gap-3 sm:grid-cols-3 my-6">
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">14.4% → 89.8%</div>
+    <div className="text-xs text-[var(--muted)]">rappel, avant/après fine-tuning (×6+)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">0.779 → 0.971</div>
+    <div className="text-xs text-[var(--muted)]">AUC, sans perte de précision (78.8%)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">95.9% / 84.6%</div>
+    <div className="text-xs text-[var(--muted)]">rappel génération contrôlée / organique</div>
+  </div>
+</div>
+
+Ces chiffres sont mesurés sur un jeu de test indépendant, jamais utilisé pour
+l'entraînement ni pour la sélection du checkpoint — et se comparent
+favorablement à l'état de l'art publié : le meilleur détecteur
+académique/gouvernemental recensé plafonne à 74,8% d'AUC, et aucun détecteur
+commercial testé dans un benchmark indépendant ne dépasse 90% d'exactitude.
+
+## En production
+
+Le modèle fine-tuné tourne en production chez Opsci, où il score les images
+collectées à l'échelle de l'entreprise pour environ **5$ par million de
+posts traités**. Le cycle diagnostic → fine-tuning n'est pas un one-shot : il
+est reconduit à chaque apparition d'un nouveau générateur sur le marché.
+
+## Stack technique
+
+ViT-Small (Community Forensics) · PEFT/LoRA · PyTorch · Hugging Face
+Transformers

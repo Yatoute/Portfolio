@@ -1,0 +1,65 @@
+> **Testez la traduction en direct** — entrez un texte en français, éwé, kabiyè ou moba sur la [démo de traduction](/demos/traduction-togolais).
+
+## Un bug trouvé avant même de fine-tuner
+
+Premier réflexe avant tout entraînement : mesurer ce que fait le modèle
+NLLB de base, à vide, sur ces trois langues. Le diagnostic a révélé un bug
+systématique plutôt qu'une simple faiblesse de couverture : **NLLB "oublie"
+les accents français en sortie** — 95% des traductions kabiyè→français et
+25% des traductions éwé→français en sont affectées. Hypothèse retenue : le
+bitext bas-ressource utilisé pour pré-entraîner NLLB sur ces directions
+provient largement du web, où le français informel est souvent écrit sans
+accents — le fine-tuning sur des paires réelles, bien accentuées, recalibre
+cette tendance en une seule époque.
+
+## Un modèle partagé plutôt que quatre modèles séparés
+
+Fine-tuning complet (pas d'adaptateur, tous les poids) de
+`nllb-200-distilled-600M`, un seul modèle pour les trois langues × 4
+directions (fr→éwé, éwé→fr, fr→kabiyè, kabiyè→fr, et moba dans les deux
+sens), sur environ 29 000 exemples au total — 7 à 8k par langue.
+
+Le moba pose un problème que les deux autres langues n'ont pas : son code
+FLORES-200 (`mfq_Latn`) **n'existe dans le vocabulaire d'aucun modèle NLLB**,
+contrairement à l'éwé et au kabiyè qui y sont au moins recensés. Un nouveau
+jeton est créé pour `mfq_Latn`, avec un embedding initialisé depuis le proxy
+`mos_Latn` (mossi/mooré, la langue gur la plus proche disponible) — même
+principe de transfert que pour les jetons de langue Whisper côté ASR.
+
+```python
+# scripts/finetune_nllb.py — extension du vocabulaire NLLB pour une
+# langue totalement absente de FLORES-200
+NLLB_LANG_CODE = {
+    "fra": "fra_Latn", "ewe": "ewe_Latn",
+    "kabiye": "kbp_Latn", "moba": "mfq_Latn",  # nouveau, proxy: mos_Latn
+}
+```
+
+<div className="not-prose grid grid-cols-1 gap-3 sm:grid-cols-3 my-6">
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">BLEU 19.0 / chrF 41.5</div>
+    <div className="text-xs text-[var(--muted)]">moba → français (n=329)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">BLEU 12.7 / chrF 33.2</div>
+    <div className="text-xs text-[var(--muted)]">français → moba (n=329)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">95% / 25%</div>
+    <div className="text-xs text-[var(--muted)]">traductions kabiyè/éwé→fr avec bug d'accents corrigé</div>
+  </div>
+</div>
+
+## Entraîner un modèle de 600M paramètres sur 6 Go de VRAM
+
+Pas d'accès à un GPU confortable pour ce projet personnel : l'entraînement
+complet de NLLB-600M (tous les poids, pas de LoRA) a dû tenir sur 6 Go de
+VRAM. Trois leviers combinés : optimiseur **Adafactor** (empreinte mémoire
+bien inférieure à Adam, qui garde deux moments par paramètre), précision
+**fp16**, et **gradient checkpointing** (recalcul des activations à la
+volée plutôt que leur conservation en mémoire). Contrainte matérielle
+transformée en choix d'ingénierie assumé, pas en compromis caché.
+
+## Stack technique
+
+NLLB-200 (600M, distillé) · Adafactor · Hugging Face Transformers · sacreBLEU

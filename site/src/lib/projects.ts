@@ -26,6 +26,70 @@ export type Project = {
 
 export const projects: Project[] = [
   {
+    slug: "detection-images-ia",
+    title: "Détection d'images générées par IA — rappel ×6, en production",
+    oneLiner:
+      "Diagnostic des angles morts d'un détecteur ViT (Community Forensics) par génération contrôlée, puis correction par fine-tuning LoRA en deux étages (LP-FT) — déployé en production chez Opsci.",
+    badge: "model",
+    status: "live-demo",
+    metrics: [
+      { value: "89.8%", label: "rappel (vs 14.4% avant)" },
+      { value: "0.971", label: "AUC (vs 0.779)" },
+      { value: "Prod", label: "chez Opsci, ~5$/M posts" },
+    ],
+    stack: ["ViT-Small (Community Forensics)", "PEFT/LoRA", "PyTorch", "LP-FT"],
+    demoUrl: "/demos/detection-images",
+    group: "stage",
+  },
+  {
+    slug: "detection-videos-ia",
+    title: "Détection de vidéos générées par IA — tête d'attention temporelle",
+    oneLiner:
+      "Le détecteur d'images ci-dessus, appliqué frame par frame par simple moyenne, plafonnait à 44.7% de rappel. Une tête d'attention temporelle sur les embeddings CLS des frames, entraînée sur 50k vidéos, referme l'écart.",
+    badge: "model",
+    status: "live-demo",
+    metrics: [
+      { value: "84.8%", label: "rappel (vs 44.7% moyenne)" },
+      { value: "0.939", label: "AUC" },
+      { value: "50 123", label: "vidéos d'entraînement" },
+    ],
+    stack: ["ViT-Small (Community Forensics)", "Transformer (tête temporelle)", "PEFT/LoRA", "Lambda Cloud (A10)"],
+    demoUrl: "/demos/detection-videos",
+    group: "stage",
+  },
+  {
+    slug: "asr-langues-togolaises",
+    title: "ASR pour l'éwé, le kabiyè et le moba",
+    oneLiner:
+      "Fine-tuning de Whisper pour trois langues nationales togolaises absentes du vocabulaire de tout modèle pré-entraîné, avec initialisation des jetons de langue depuis des proxys phonétiques (yoruba, haoussa).",
+    badge: "model",
+    status: "live-demo",
+    metrics: [
+      { value: "8.9%", label: "WER (éwé, solo)" },
+      { value: "16.3%", label: "WER multilingue joint" },
+      { value: "3", label: "langues zéro-ressource" },
+    ],
+    stack: ["Whisper (medium)", "PyTorch", "Silero VAD", "MMS forced alignment"],
+    demoUrl: "/demos/asr-togolais",
+    group: "perso",
+  },
+  {
+    slug: "traduction-langues-togolaises",
+    title: "Traduction éwé/kabiyè/moba ↔ français",
+    oneLiner:
+      "Diagnostic d'un bug systématique de NLLB (perte des accents français en sortie, jusqu'à 95% des cas) puis fine-tuning complet d'un modèle partagé pour 3 langues × 4 directions, sous contrainte de 6 Go de VRAM.",
+    badge: "model",
+    status: "live-demo",
+    metrics: [
+      { value: "BLEU 19.0", label: "moba → français" },
+      { value: "95%", label: "bug d'accents détecté puis corrigé" },
+      { value: "6 Go", label: "VRAM (Adafactor + fp16)" },
+    ],
+    stack: ["NLLB-200 (600M)", "Adafactor", "Hugging Face Transformers"],
+    demoUrl: "/demos/traduction-togolais",
+    group: "perso",
+  },
+  {
     slug: "translation-cost-optimization",
     title: "Moteur de traduction — -90% de coût, ×77 plus rapide",
     oneLiner:

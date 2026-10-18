@@ -1,0 +1,64 @@
+> **Testez la transcription en direct** — parlez ou uploadez un extrait audio en éwé, kabiyè ou moba sur la [démo ASR](/demos/asr-togolais).
+
+## Le problème
+
+L'éwé, le kabiyè et le moba sont des langues nationales du Togo, parlées par
+des millions de locuteurs — et absentes du vocabulaire de tout modèle de
+reconnaissance vocale pré-entraîné, Whisper inclus. Ce projet a été construit
+en amont et indépendamment du "Challenge National des Langues Locales"
+(Togo AI Lab, Ministère de l'Efficacité du Service Public, avec Zindi et
+Umbaji), en l'absence de tout jeu de données officiel : les corpus audio ont
+été constitués par scraping et alignement forcé de contenus existants
+(lectures bibliques essentiellement, seule source avec un volume suffisant
+dans ces langues).
+
+## Données : constituer un corpus là où il n'en existe pas
+
+| Langue | Source | Volume | Méthode |
+|---|---|---|---|
+| Moba | muaba-benn.com | 27 312 clips | Scraping + minutage |
+| Éwé | BibleTTS (Meyer et al., Interspeech 2022) | ~22 400 clips (~80h studio) | Corpus existant |
+| Kabiyè | bible.is (Nouveau Testament complet) | 16 928 clips | Alignement forcé (MMS) |
+
+## Fine-tuning de Whisper, avec une astuce pour les jetons de langue manquants
+
+Whisper n'a tout simplement pas de jeton pour l'éwé, le kabiyè ou le moba.
+Plutôt qu'une initialisation aléatoire de ces nouveaux jetons (qui démarrerait
+sans aucun a priori), ils sont initialisés depuis les embeddings de langues
+déjà connues du modèle et phonétiquement proches (yoruba, haoussa) — un
+raccourci qui accélère nettement la convergence par rapport à un départ à
+froid.
+
+<div className="not-prose grid grid-cols-1 gap-3 sm:grid-cols-3 my-6">
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">8.9%</div>
+    <div className="text-xs text-[var(--muted)]">WER éwé (modèle mono-langue, CER 1.8%)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">14.0%</div>
+    <div className="text-xs text-[var(--muted)]">WER moba (modèle mono-langue, CER 4.3%)</div>
+  </div>
+  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-2xl font-bold text-[var(--accent)]">16.3%</div>
+    <div className="text-xs text-[var(--muted)]">WER global, modèle multilingue joint (n=2269)</div>
+  </div>
+</div>
+
+## Quand il n'y a pas assez de données pour un modèle mono-langue
+
+Un modèle mono-langue n'a été entraîné que là où le volume le permettait
+(moba : 27k clips, éwé/BibleTTS : ~22k clips) — et y obtient le meilleur
+WER. Pour le kabiyè et la variante éwé/bible.is (16,9k et 11,8k clips,
+alignés automatiquement donc plus bruités), **aucun entraînement mono-langue
+n'a été tenté : seul le modèle multilingue conjoint existe**, et produit un
+résultat directement exploitable (WER 0.214 et 0.135) par transfert de
+régularités phonétiques apprises sur les deux autres langues. Un seul modèle
+sert les trois langues à la fois plutôt que d'en maintenir trois séparés —
+un compromis assumé entre performance par langue et simplicité
+opérationnelle, pertinent dès qu'on sort du cas où chaque langue dispose
+d'un corpus suffisant pour son propre fine-tuning.
+
+## Stack technique
+
+Whisper (medium) · PyTorch · Hugging Face Transformers · Silero VAD ·
+alignement forcé MMS · Gradio (démo)
