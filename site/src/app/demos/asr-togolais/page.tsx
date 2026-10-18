@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ASR_TOGOLAIS_API } from "@/lib/demoConfig";
+import { callHfSpace } from "@/lib/hfCall";
 
 const LANGUAGES: { key: string; label: string }[] = [
   { key: "ewe", label: "Éwé" },
@@ -20,13 +21,7 @@ async function uploadFile(file: File): Promise<string> {
 }
 
 async function callTranscribe(path: string, language: string): Promise<string> {
-  const res = await fetch("/api/hf-call", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ space: "asr-togolais", data: [{ path, meta: { _type: "gradio.FileData" } }, language] }),
-  });
-  const { data, error } = await res.json();
-  if (!res.ok || error) throw new Error(error || "Appel API échoué.");
+  const data = await callHfSpace("asr-togolais", [{ path, meta: { _type: "gradio.FileData" } }, language]);
   return data[0] as string;
 }
 
@@ -46,9 +41,11 @@ export default function AsrTogolaisDemo() {
       const path = await uploadFile(file);
       const text = await callTranscribe(path, language);
       setTranscript(text);
-    } catch {
+    } catch (err) {
       setError(
-        "La démo était peut-être en train de démarrer (GPU alloué à la demande, premier appel plus lent le temps de télécharger le modèle Silero VAD) — réessayez dans quelques secondes."
+        err instanceof Error && err.message
+          ? err.message
+          : "La démo était peut-être en train de démarrer (GPU alloué à la demande, premier appel plus lent le temps de télécharger le modèle Silero VAD) — réessayez dans quelques secondes."
       );
     } finally {
       setLoading(false);

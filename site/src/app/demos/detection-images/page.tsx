@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { DETECTION_IMAGES_API } from "@/lib/demoConfig";
+import { callHfSpace } from "@/lib/hfCall";
 
 type Result = { ia: number; reel: number };
 
@@ -16,14 +17,8 @@ async function uploadFile(file: File): Promise<string> {
 }
 
 async function callPredict(path: string): Promise<Result> {
-  const res = await fetch("/api/hf-call", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ space: "detection-images", data: [{ path, meta: { _type: "gradio.FileData" } }] }),
-  });
-  const { data, error } = await res.json();
-  if (!res.ok || error) throw new Error(error || "Appel API échoué.");
-  const confidences: { label: string; confidence: number }[] = data[0].confidences;
+  const data = await callHfSpace("detection-images", [{ path, meta: { _type: "gradio.FileData" } }]);
+  const confidences: { label: string; confidence: number }[] = (data[0] as { confidences: { label: string; confidence: number }[] }).confidences;
   const byLabel = Object.fromEntries(confidences.map((c) => [c.label, c.confidence]));
   return { ia: byLabel["Généré par IA"] ?? 0, reel: byLabel["Réel"] ?? 0 };
 }
@@ -43,9 +38,11 @@ export default function DetectionImagesDemo() {
       const path = await uploadFile(file);
       const r = await callPredict(path);
       setResult(r);
-    } catch {
+    } catch (err) {
       setError(
-        "La démo était peut-être en train de démarrer (GPU alloué à la demande) — réessayez dans quelques secondes."
+        err instanceof Error && err.message
+          ? err.message
+          : "La démo était peut-être en train de démarrer (GPU alloué à la demande) — réessayez dans quelques secondes."
       );
     } finally {
       setLoading(false);

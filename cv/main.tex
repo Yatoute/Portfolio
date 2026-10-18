@@ -3,11 +3,11 @@
 % -------------------- Packages & Layout --------------------
 \usepackage[
   ignoreheadfoot,
-  top=1.0cm,
-  bottom=1.0cm,
+  top=0.85cm,
+  bottom=0.75cm,
   left=1.2cm,
   right=1.2cm,
-  footskip=0.5cm
+  footskip=0.3cm
 ]{geometry}
 
 \usepackage{titlesec}
@@ -215,20 +215,25 @@ AI Engineer diplômé en 2026 (ENSAI/ENSAE), spécialisé dans le fine-tuning et
 \begin{onecolentry}
   \begin{highlights}
   
- \item \textbf{GPT-Light – Implémentation complète d’un modèle GPT \& fine-tuning des poids officiels GPT-2 (OpenAI)} - \href{https://github.com/Yatoute/gpt-light}{\faGithub~github.com/Yatoute/gpt-light}.
+ \item \textbf{Détection de contenus générés par IA (image \& vidéo)} - \href{https://yatoute.vercel.app/projects/detection-images-ia}{\faGlobe~démo live}.
 \begin{highlights}
-  \item Développement d’un \textbf{GPT de type GPT-2} entièrement from scratch en PyTorch : Embeddings, Positional encodings, Multi-head Causal Attention, Feedforward Neural Network.
-  \item Intégration des \textbf{poids officiels GPT-2 (OpenAI)} avec \textbf{weight tying} : partage des poids entre la couche d’embedding et la tête de sortie (logits), conforme à l’architecture GPT-2 et optimisant la capacité du modèle.
-  \item Fine-tuning supervisé sur une \textbf{tâche de classification de spam} 
-  
+  \item ViT-Small fine-tuné par \textbf{LoRA} (deux étages) : \textbf{rappel 89.8\%, AUC 0.971} sur image (jeu de test tenu à l'écart), déployé en production chez Opsci AI.
+  \item Extension vidéo par tête d'attention temporelle sur embeddings \texttt{[CLS]} (16 frames, LoRA) : \textbf{rappel 84.8\%, AUC 0.939} sur 50k vidéos (vs 44.7\% pour une moyenne simple par frame).
+\end{highlights}
+
+\vspace{0.10cm}
+
+ \item \textbf{WhisperTogo – ASR \& traduction pour langues togolaises à ressources quasi nulles} - \href{https://yatoute.vercel.app/projects/asr-langues-togolaises}{\faGlobe~démo live}.
+\begin{highlights}
+  \item \textbf{Whisper} fine-tuné (éwé, kabiyè, moba — absentes de tout modèle pré-entraîné) : \textbf{WER 16.3\%} en multilingue joint, tokens de langue initialisés depuis des proxys phonétiques.
+  \item \textbf{NLLB-200} fine-tuné pour la traduction (4 directions) : diagnostic et correction d'un bug de perte d'accents en sortie, BLEU 19.0 (moba→fr).
 \end{highlights}
 
 \vspace{0.10cm}
 
     \item \textbf{ChatPDF – Agent RAG agentique avec navigation de documents} \\
     \begin{highlights}
-      \item Agent \textbf{LangGraph} avec outils (recherche sémantique FAISS, navigation entre chunks, lecture par page) et résumé automatique de conversation pour la gestion du contexte.
-      \item OCR pour documents scannés, providers de modèles interchangeables (OpenAI / Ollama local).
+      \item Agent \textbf{LangGraph} avec outils (recherche sémantique FAISS, navigation entre chunks, lecture par page, OCR pour documents scannés), providers interchangeables (OpenAI / Ollama local).
     \end{highlights}
 
 \vspace{0.10cm}
@@ -248,8 +253,7 @@ AI Engineer diplômé en 2026 (ENSAI/ENSAE), spécialisé dans le fine-tuning et
     \item \textbf{NLP classique :} BERT, UMAP, HDBSCAN, NER, Topic modeling
     \item \textbf{Cloud \& Infra :} Google Cloud Platform, AWS, Terraform (HCL \& CDKTF)
     \item \textbf{DevOps :} Docker, Kubernetes, GitHub Actions
-    \item \textbf{Soft Skills :} Autonomie, rigueur, rédaction technique
-    \item \textbf{Langues :} Français (natif), Anglais (intermédiaire)
+    \item \textbf{Soft Skills :} Autonomie, rigueur, rédaction technique — \textbf{Langues :} Français (natif), Anglais (intermédiaire)
 \end{spaciouslist}
 \end{onecolentry}
 

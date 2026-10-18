@@ -2,17 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { callHfSpace } from "@/lib/hfCall";
 
 const LANGUAGES = ["Français", "Éwé", "Kabiyè", "Moba"];
 
 async function callTranslate(text: string, src: string, tgt: string): Promise<string> {
-  const res = await fetch("/api/hf-call", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ space: "traduction-togolais", data: [text, src, tgt] }),
-  });
-  const { data, error } = await res.json();
-  if (!res.ok || error) throw new Error(error || "Appel API échoué.");
+  const data = await callHfSpace("traduction-togolais", [text, src, tgt]);
   return data[0] as string;
 }
 
@@ -32,9 +27,11 @@ export default function TraductionTogolaisDemo() {
     try {
       const r = await callTranslate(text, src, tgt);
       setResult(r);
-    } catch {
+    } catch (err) {
       setError(
-        "La démo était peut-être en train de démarrer (GPU alloué à la demande) — réessayez dans quelques secondes."
+        err instanceof Error && err.message
+          ? err.message
+          : "La démo était peut-être en train de démarrer (GPU alloué à la demande) — réessayez dans quelques secondes."
       );
     } finally {
       setLoading(false);
