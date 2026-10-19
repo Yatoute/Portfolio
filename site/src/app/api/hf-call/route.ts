@@ -22,6 +22,8 @@ const SPACE_URLS: Record<string, string> = {
   "detection-videos": "https://yatoute-detection-videos-ia.hf.space",
   "asr-togolais": "https://yatoute-asr-langues-togolaises.hf.space",
   "traduction-togolais": "https://yatoute-traduction-langues-togolaises.hf.space",
+  "video-mining-analyze": "https://yatoute-video-mining-pipeline.hf.space",
+  "video-mining-translate": "https://yatoute-video-mining-pipeline.hf.space",
 };
 
 const ALLOWED_FNS: Record<string, string> = {
@@ -29,6 +31,8 @@ const ALLOWED_FNS: Record<string, string> = {
   "detection-videos": "predict",
   "asr-togolais": "transcribe",
   "traduction-togolais": "translate",
+  "video-mining-analyze": "analyze_video",
+  "video-mining-translate": "translate_handler",
 };
 
 export async function POST(req: NextRequest) {

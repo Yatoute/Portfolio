@@ -1,21 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { VIDEOMINING_API } from "@/lib/demoConfig";
+import { callHfSpace } from "@/lib/hfCall";
 
-type Keyframe = { rank: number; frame_index: number; filename: string };
-type Scene = { index: number; start_ms: number; end_ms: number; transcript: string; keyframes: Keyframe[] };
+type Scene = { index: number; start_s: number; end_s: number; transcript: string; keyframes: string[] };
 type Result = {
-  metadata: { width: number; height: number; duration: number };
-  language: string | null;
+  metadata: { width: number; height: number; duration: number; language: string | null };
   scenes: Scene[];
 };
-type JobStatus = { status: "queued" | "processing" | "done" | "error"; stage: string; progress: number; error: string | null };
 
 // Same ~50-language set as the production translation Cloud Function
 // (everything Argos Translate can translate) — kept in sync with
-// demos/video-mining/pipeline/translation.py's SUPPORTED_LANGUAGES.
+// hf-spaces/video-mining-pipeline/pipeline/translation.py's SUPPORTED_LANGUAGES.
 const LANGUAGES: Record<string, string> = {
   ar: "Arabe", bg: "Bulgare", ca: "Catalan", cs: "Tchèque",
   da: "Danois", de: "Allemand", el: "Grec", en: "Anglais",
@@ -31,12 +29,6 @@ const LANGUAGES: Record<string, string> = {
   zh: "Chinois (simplifié)", zt: "Chinois (traditionnel)",
 };
 
-const STAGES: { key: string; label: string }[] = [
-  { key: "scene_detection", label: "Détection de scènes" },
-  { key: "keyframes", label: "Sélection de keyframes" },
-  { key: "transcription", label: "Transcription" },
-];
-
 function Spinner() {
   return (
     <span
@@ -46,56 +38,37 @@ function Spinner() {
   );
 }
 
-function StageTracker({ status }: { status: JobStatus }) {
-  const currentIndex =
-    status.status === "queued" ? -1 : STAGES.findIndex((s) => s.key === status.stage);
-
-  return (
-    <div className="flex flex-col gap-3">
-      {STAGES.map((stage, i) => {
-        const isDone = currentIndex > i || status.status === "done";
-        const isActive = currentIndex === i && status.status === "processing";
-        return (
-          <div key={stage.key} className="flex items-center gap-3 text-sm">
-            {isDone ? (
-              <span
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-background"
-                style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-2))" }}
-              >
-                ✓
-              </span>
-            ) : isActive ? (
-              <Spinner />
-            ) : (
-              <span className="h-4 w-4 shrink-0 rounded-full border border-border" />
-            )}
-            <span className={isDone || isActive ? "font-semibold text-foreground" : "text-muted"}>
-              {stage.label}
-            </span>
-            {isActive && (
-              <span className="font-mono text-xs text-muted">
-                {Math.round(status.progress * 100)}%
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+function fmtTime(s: number) {
+  const sec = Math.floor(s);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 }
 
-function fmtTime(ms: number) {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+async function uploadFile(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("files", file);
+  const res = await fetch(`${VIDEOMINING_API}/gradio_api/upload`, { method: "POST", body: form });
+  if (!res.ok) throw new Error("Upload échoué.");
+  const paths: string[] = await res.json();
+  return paths[0];
+}
+
+async function callAnalyze(path: string): Promise<Result> {
+  const data = await callHfSpace("video-mining-analyze", [{ path, meta: { _type: "gradio.FileData" } }]);
+  return data[0] as Result;
+}
+
+async function callTranslate(text: string, toCode: string): Promise<{ translated: string; detectedSource: string }> {
+  const data = await callHfSpace("video-mining-translate", [text, "Auto-détection", LANGUAGES[toCode]]);
+  const [translated, detectedLabel] = data as [string, string];
+  const codeToLabel = Object.fromEntries(Object.entries(LANGUAGES).map(([c, l]) => [l, c]));
+  return { translated, detectedSource: codeToLabel[detectedLabel] ?? detectedLabel };
 }
 
 export default function VideoMiningDemo() {
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<JobStatus | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [translateSource, setTranslateSource] = useState("");
   const [translateResult, setTranslateResult] = useState("");
@@ -104,44 +77,23 @@ export default function VideoMiningDemo() {
   const [translating, setTranslating] = useState(false);
   const [translateError, setTranslateError] = useState<string | null>(null);
 
-  function poll(id: string) {
-    if (pollRef.current) clearTimeout(pollRef.current);
-    pollRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`${VIDEOMINING_API}/api/jobs/${id}`);
-        const data: JobStatus = await res.json();
-        setStatus(data);
-        if (data.status === "done") {
-          const r = await fetch(`${VIDEOMINING_API}/api/jobs/${id}/result`);
-          setResult(await r.json());
-        } else if (data.status !== "error") {
-          poll(id);
-        }
-      } catch {
-        setUploadError("Connexion perdue avec la démo — réessayez.");
-      }
-    }, 2500);
-  }
-
   async function handleUpload(file: File) {
-    setUploadError(null);
+    setPreview(URL.createObjectURL(file));
     setResult(null);
-    setStatus(null);
-    const form = new FormData();
-    form.append("file", file);
+    setError(null);
+    setLoading(true);
     try {
-      const res = await fetch(`${VIDEOMINING_API}/api/upload`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Upload refusé.");
-      setJobId(data.job_id);
-      setStatus({ status: "queued", stage: "", progress: 0, error: null });
-      poll(data.job_id);
+      const path = await uploadFile(file);
+      const r = await callAnalyze(path);
+      setResult(r);
     } catch (e) {
-      setUploadError(
-        e instanceof Error
+      setError(
+        e instanceof Error && e.message
           ? e.message
-          : "La démo est peut-être en veille (elle scale à zéro) — réessayez dans une minute."
+          : "La démo était peut-être en train de démarrer (GPU alloué à la demande) — réessayez dans quelques secondes."
       );
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -151,23 +103,15 @@ export default function VideoMiningDemo() {
     setTranslateError(null);
     setDetectedSource(null);
     try {
-      const res = await fetch(`${VIDEOMINING_API}/api/translate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: translateSource, to_code: toLang }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Échec de traduction.");
-      setTranslateResult(data.translated);
-      setDetectedSource(data.detected_source ?? null);
+      const { translated, detectedSource: src } = await callTranslate(translateSource, toLang);
+      setTranslateResult(translated);
+      setDetectedSource(src);
     } catch (e) {
-      setTranslateError(e instanceof Error ? e.message : "Échec de traduction.");
+      setTranslateError(e instanceof Error && e.message ? e.message : "Échec de traduction.");
     } finally {
       setTranslating(false);
     }
   }
-
-  const isProcessing = status && status.status !== "done" && status.status !== "error";
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-10 px-6 py-16 sm:py-24">
@@ -179,83 +123,57 @@ export default function VideoMiningDemo() {
           Video <span className="text-gradient">mining</span> en direct
         </h1>
         <p className="text-lg text-muted">
-          Uploadez une courte vidéo (≤3min, ≤25MB) — détection de scènes, keyframes CLIP et
-          transcription WhisperX, sur CPU seul.
+          Uploadez une courte vidéo (≤3min) — détection de scènes, keyframes CLIP et transcription
+          WhisperX, sur GPU à la demande (ZeroGPU).
         </p>
       </div>
 
-      {!jobId && (
-        <div className="card-glass glow-border flex flex-col items-start gap-4 rounded-3xl p-7">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-full px-6 py-3 text-sm font-bold text-background transition-transform hover:scale-105"
-            style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-2))" }}
-          >
-            Choisir une vidéo
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleUpload(f);
-            }}
-          />
-          {uploadError && <p className="text-sm text-muted">{uploadError}</p>}
-        </div>
-      )}
+      <div className="card-glass glow-border flex flex-col gap-4 rounded-3xl p-7">
+        <input
+          type="file"
+          accept="video/*"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleUpload(f);
+          }}
+          disabled={loading}
+          className="text-sm text-muted file:mr-4 file:rounded-full file:border-0 file:bg-background-2 file:px-4 file:py-2 file:text-sm file:font-semibold"
+        />
 
-      {isProcessing && status && (
-        <div className="card-glass flex flex-col gap-5 rounded-3xl p-7">
-          <div className="flex items-center gap-3">
+        {preview && (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video controls className="max-h-80 w-fit rounded-xl border border-border" src={preview} />
+        )}
+
+        {loading && (
+          <div className="flex items-center gap-3 text-sm text-muted">
             <Spinner />
-            <p className="text-sm font-semibold">
-              {status.status === "queued" ? "En file d'attente..." : "Traitement en cours..."}
-            </p>
+            Analyse en cours (scènes, keyframes CLIP, transcription) — peut prendre 1 à 2 minutes.
           </div>
-          <StageTracker status={status} />
-          <p className="text-xs text-muted">
-            Sur CPU, ça peut prendre 1 à 5 minutes selon la longueur du clip.
-          </p>
-        </div>
-      )}
+        )}
+        {error && <div className="rounded-xl border border-border bg-background-2 p-4 text-sm text-muted">{error}</div>}
+      </div>
 
-      {status?.status === "error" && (
-        <div className="card-glass rounded-3xl p-7 text-sm text-muted">Erreur : {status.error}</div>
-      )}
-
-      {result && jobId && (
+      {result && result.scenes.length > 0 && (
         <div className="flex flex-col gap-6">
-          <div className="card-glass overflow-hidden rounded-3xl p-4">
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-            <video controls className="w-full rounded-xl" src={`${VIDEOMINING_API}/api/jobs/${jobId}/video`} />
-            <p className="pt-3 text-xs text-muted">
-              {result.metadata.width}×{result.metadata.height} · {result.metadata.duration.toFixed(1)}s ·{" "}
-              {result.scenes.length} scène(s) · langue : {result.language ?? "n/a"}
-            </p>
-          </div>
-
+          <p className="text-sm text-muted">
+            {result.metadata.width}×{result.metadata.height} · {result.metadata.duration.toFixed(1)}s ·{" "}
+            {result.scenes.length} scène(s) · langue : {result.metadata.language ?? "n/a"}
+          </p>
           <div className="flex flex-col gap-4">
             {result.scenes.map((scene) => (
               <div key={scene.index} className="card-glass rounded-2xl p-5">
                 <div className="flex items-baseline justify-between pb-3">
                   <span className="font-bold">Scène {scene.index + 1}</span>
                   <span className="font-mono text-xs text-muted">
-                    {fmtTime(scene.start_ms)} – {fmtTime(scene.end_ms)}
+                    {fmtTime(scene.start_s)} – {fmtTime(scene.end_s)}
                   </span>
                 </div>
                 {scene.keyframes.length > 0 && (
                   <div className="flex gap-2 overflow-x-auto pb-3">
-                    {scene.keyframes.map((kf) => (
+                    {scene.keyframes.map((uri, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={kf.filename}
-                        src={`${VIDEOMINING_API}/api/jobs/${jobId}/keyframes/${kf.filename}`}
-                        alt={`Keyframe ${kf.frame_index}`}
-                        className="h-24 shrink-0 rounded-lg border border-border"
-                      />
+                      <img key={i} src={uri} alt={`Keyframe scène ${scene.index + 1}`} className="h-24 shrink-0 rounded-lg border border-border" />
                     ))}
                   </div>
                 )}
@@ -272,16 +190,13 @@ export default function VideoMiningDemo() {
         <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-muted">Moteur de traduction</h2>
         <div className="card-glass rounded-3xl p-7">
           <p className="pb-4 text-sm text-muted">
-            Même moteur qu&apos;en production (Argos / CTranslate2, {Object.keys(LANGUAGES).length}{" "}
-            langues), tournant en process. La langue source est détectée automatiquement
-            (fast-langdetect) — pas besoin de la préciser.
+            Même moteur qu&apos;en production (Argos / CTranslate2, {Object.keys(LANGUAGES).length} langues) —
+            la langue source est détectée automatiquement.
           </p>
           <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr]">
             <div className="flex flex-col gap-2">
               <div className="flex h-[34px] items-center rounded-lg border border-border bg-background-2 px-3 text-sm text-muted">
-                {detectedSource
-                  ? `Détecté : ${LANGUAGES[detectedSource] ?? detectedSource}`
-                  : "Langue source détectée automatiquement"}
+                {detectedSource ? `Détecté : ${LANGUAGES[detectedSource] ?? detectedSource}` : "Langue source détectée automatiquement"}
               </div>
               <textarea
                 value={translateSource}
@@ -299,9 +214,7 @@ export default function VideoMiningDemo() {
                 className="rounded-lg border border-border bg-background-2 px-3 py-1.5 text-sm"
               >
                 {Object.entries(LANGUAGES).map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
+                  <option key={code} value={code}>{name}</option>
                 ))}
               </select>
               <textarea
